@@ -176,7 +176,7 @@ TinyIoT                         [CSEBase]  MN-CSE (라즈베리파이)
 
 ```text
 Sejong_4IoT_OneM2M/
-├─ README.md                    프로젝트 소개 (이 문서)
+├─ README.md                    프로젝트 소개 
 ├─ .gitignore
 ├─ docs/
 │  ├─ architecture.md           시스템 구성, 리소스 트리 상세
@@ -265,6 +265,4 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | Arduino D9 | 부저 | |
 | Arduino D10 / D11 / D12 | LED R / Y / G | 220Ω 직렬 |
 
-ESP8266의 3.3V 출력은 5V Arduino 입력에서 대부분 HIGH로 인식된다. 불안정하면 레벨시프터를 추가한다.
 
----
