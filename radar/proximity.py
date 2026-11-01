@@ -1,6 +1,6 @@
 import serial, math, time, urllib.request
 
-ESP = 'http://10.11.8.68'   # ESP8266 IP
+ESP = 'http://192.168.219.104'   # ESP8266 IP
 WARN_MM = 500                    # 경고 거리 (mm)
 OFF_DELAY = 1.5                  # 이 시간(초) 동안 계속 범위 밖이어야 끔
 
