@@ -1,0 +1,18 @@
+# 4iot VisionAI 설정 (Pi용) — config.yaml과 다른 값만 적는다 (CLAUDE.md 12장)
+# 실행: python -m vision4iot.main --config config.pi.yaml
+base: config.yaml
+
+source: "webcam:0"        # 로지텍 C270 (USB). Pi 카메라 모듈이면 "picam"
+frame_size: [640, 480]
+headless: true
+
+model:
+  path: "yolo11n-pose_ncnn_model"   # Pi에서 export: yolo export model=yolo11n-pose.pt format=ncnn imgsz=320
+  imgsz: 320
+
+fusion:
+  # C270 대각 55° → 가로 약 45~49° 추정. 도착 후 실측해서 고친다 (보정 경고·유령 판정의 화각 기준)
+  camera_fov_deg: 48
+
+webview:
+  enabled: true             # 화면이 없으니 브라우저 디버그 화면 (webview.py 만들면)

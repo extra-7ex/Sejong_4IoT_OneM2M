@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+data/*
+!data/.gitkeep
+out/*
+!out/.gitkeep
+*.pt
+*_ncnn_*/
+sample_*.jpg
+results.csv
+config.local.yaml
+*.egg-info/
+calib/*.jpg
+calib/*.json
