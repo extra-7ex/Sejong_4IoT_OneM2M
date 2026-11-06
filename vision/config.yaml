@@ -1,0 +1,72 @@
+# 4iot VisionAI 설정 (노트북용) — 값은 여기서만 바꾼다 (CLAUDE.md 6–13장)
+# Pi용은 config.pi.yaml (7단계에서 생성). 비밀값·IP는 config.local.yaml에 (git 제외)
+
+source: "webcam:0"          # webcam:0 | data/walk.mp4 | picam
+frame_size: [640, 480]
+headless: false
+
+model:
+  path: "yolo11n-pose.pt"   # Pi: yolo11n-pose_ncnn_320
+  imgsz: 640                # Pi: 320
+  conf: 0.4
+  tracker: "bytetrack.yaml"
+
+thresholds:                 # 위험 판단 엔진과 같은 값
+  caution_dist_m: 3.0
+  caution_ttc_s: 3.0
+  danger_dist_m: 1.5
+  danger_ttc_s: 1.5
+  interlock_dist_m: 1.0     # 참고용 (차량 노드가 처리)
+
+fusion:
+  match_radius_m: 0.5
+  ghost_radius_m: 1.5
+  camera_fov_deg: 66        # 노트북 웹캠 실제 값으로 수정 (보정 경고 기준)
+
+posture:
+  kp_min_conf: 0.3
+  lying_torso_deg: 60
+  lying_box_ratio: 1.2
+  edge_margin_px: 5         # 박스가 화면 끝에서 이 안이면 잘린 것으로 보고 박스 비율 규칙을 안 씀
+  crouch_hip_ankle_ratio: 0.9
+  crouch_knee_deg: 110
+  vote_frames: 5
+  show_debug: false         # true면 판정 값(몸통 각도·비율·무릎 각도) 표시, --debug와 같음
+
+calib:
+  file: "calib/H.json"
+
+radar:
+  source: "sim"             # sim | replay | serial | onem2m
+  flip_x: false             # LD2450 x 부호 뒤집기 (실측으로 확정, CLAUDE.md 9장)
+  flip_v: false             # 다가올 때 v < 0 이 아니면 true
+  sim:
+    mode: "from_camera"     # from_camera | ghost | script
+    noise_m: 0.15
+    drop_static_prob: 0.6
+    static_speed_mps: 0.1
+    ghost_points: [[1.6, 3.1]]
+    script_file: "data/radar_script.json"
+  replay_file: "data/radar_log.bin"
+  uploader:                 # python -m vision4iot.radar_uploader → AE-forklift01/radar (CLAUDE.md 13장)
+    hz: 10                  # 엔진은 새 CIN이 1초 넘게 없으면 UNKNOWN → 표적이 없어도 매번 올린다
+    originator: "Cforklift01"   # 팀 setup_onem2m.sh에서 AE-forklift01을 만든 originator
+    sim_mode: "script"      # 업로더는 카메라 없이 돈다 → script | ghost (from_camera는 융합 단계용)
+  serial:
+    port: "/dev/serial0"
+    baud: 256000
+
+output:
+  mode: "stdout"            # stdout | jsonl | onem2m
+  jsonl_file: "out/fusedTracks.jsonl"
+
+webview:
+  enabled: false
+  port: 8080
+
+onem2m:                     # 팀 저장소·광민 님 설정으로 채우기 — 추측해서 넣지 않기
+  base_url: ""              # http://<Pi IP>:3000 — IP는 config.local.yaml에 (git 제외). 비면 오프라인
+  cse_name: "TinyIoT"        # 팀 README 4.1
+  originator: "CVisionAI"   # 팀 관례 C + AE 이름
+  fused_path: "AE-VisionAI/fusedTracks"
+  radar_path: "AE-forklift01/radar"

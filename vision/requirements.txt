@@ -1,0 +1,7 @@
+ultralytics
+opencv-python
+numpy
+pyyaml
+pyserial
+pytest
+lap>=0.5.12      # ByteTrack(model.track)이 필요로 함 — 없으면 ultralytics가 실행 중 자동 설치
