@@ -1,0 +1,4 @@
+base: config.yaml
+# tools/start_local_cse.sh의 별도 시험용 서버는 운영 MN과 다른 TinyIoT를 사용한다.
+onem2m:
+  cse_name: "TinyIoT"

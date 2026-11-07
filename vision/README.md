@@ -57,7 +57,7 @@ python3 -m venv .venv
 .venv/bin/python -m vision4iot.main --config config.pi.yaml --radar onem2m --output onem2m --base-url http://127.0.0.1:3000
 .venv/bin/python -m vision4iot.main --config config.pi.yaml --radar sim     # 레이더 없이 (카메라 위치로 가짜 레이더), 결과는 화면 출력
 ```
-CSE 이름이 다르면(MN `TinyIoT-mn` 등) `config.local.yaml`에 `onem2m: {cse_name: ...}`.
+팀 제안 기본 CSE 이름은 `TinyIoT-MN`이다. Pi에 실제 적용했는지 먼저 확인하고, 다르면 `config.local.yaml`의 `onem2m: {cse_name: ...}`에 실제 이름을 지정한다. [전환 안내](../docs/cse-naming.md)
 
 카메라 위치 맞추기 → 바닥 보정(카메라를 옮기면 다시):
 ```
