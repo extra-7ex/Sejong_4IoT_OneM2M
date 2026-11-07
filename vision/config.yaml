@@ -66,7 +66,7 @@ webview:
 
 onem2m:                     # 팀 저장소·광민 님 설정으로 채우기 — 추측해서 넣지 않기
   base_url: ""              # http://<Pi IP>:3000 — IP는 config.local.yaml에 (git 제외). 비면 오프라인
-  cse_name: "TinyIoT"        # 팀 README 4.1
+  cse_name: "TinyIoT-MN"     # 팀 제안 기본값. 실제 Pi 설정 확인 전 config.local.yaml로 덮어쓰기
   originator: "CVisionAI"   # 팀 관례 C + AE 이름
   fused_path: "AE-VisionAI/fusedTracks"
   radar_path: "AE-forklift01/radar"

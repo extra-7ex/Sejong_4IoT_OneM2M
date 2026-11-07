@@ -75,7 +75,7 @@ python -m engine.main --transport notification --listen 0.0.0.0 --port 8081
 
 | 환경 변수 | 기본값 | 의미 |
 |---|---:|---|
-| `ONEM2M_CSE_BASE` | `http://127.0.0.1:3000/TinyIoT` | CSE base URI |
+| `ONEM2M_CSE_BASE` | `http://127.0.0.1:3000/TinyIoT-MN` | CSE base URI. Pi의 실제 설정이 다르면 환경 변수로 지정 |
 | `ONEM2M_RADAR_PATH` | `/AE-forklift01/radar/la` | 최신 레이더 CIN 경로 |
 | `ONEM2M_EVENTS_PATH` | `/AE-riskengine/events` | 이벤트 CNT 경로 |
 | `ONEM2M_ORIGIN` / `ONEM2M_RVI` | `Criskengine` / `3` | oneM2M Origin / Release Version |

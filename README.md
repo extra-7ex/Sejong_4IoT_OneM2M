@@ -118,8 +118,12 @@ TTC는 접근 중인 표적에 대해서만 계산한다. 레이더 노드는 �
 
 ### 4.1 리소스 트리
 
+팀 제안 명명안: MN CSEBase 이름은 `TinyIoT-MN`, CSE ID는 `/tinyiot-mn`이다.
+IN은 각각 `TinyIoT-IN`, `/tinyiot-in`을 제안한다.
+실제 Pi와 IN에 적용·검증된 값은 아니다. 변경 전 [전환 안내](docs/cse-naming.md)를 확인한다.
+
 ```text
-TinyIoT                         [CSEBase]  MN-CSE (라즈베리파이)
+TinyIoT-MN                      [CSEBase]  MN-CSE (라즈베리파이, 제안)
 ├─ defaultACP                   [ACP]      기본 접근 권한 정책 (자동 생성)
 ├─ AE-forklift01                [AE]       지게차      Origin: Cforklift01
 │   ├─ radar                    [CNT]      표적 x·y·속도 (최대 3명), mni 100

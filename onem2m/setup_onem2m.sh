@@ -1,5 +1,5 @@
 #!/bin/bash
-CSE=http://$(hostname -I | awk '{print $1}'):3000/TinyIoT
+CSE="${ONEM2M_CSE_BASE:-http://$(hostname -I | awk '{print $1}'):3000/TinyIoT-MN}"
 
 post() {  # 사용법: post <경로> <ty> <Origin> <JSON>
   curl -s -X POST "$CSE$1" \

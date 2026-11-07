@@ -1,6 +1,6 @@
 #!/bin/bash
 # 사용법: bash sub_alert_node.sh <ESP8266_IP>
-CSE=http://$(hostname -I | awk '{print $1}'):3000/TinyIoT
+CSE="${ONEM2M_CSE_BASE:-http://$(hostname -I | awk '{print $1}'):3000/TinyIoT-MN}"
 ESP=$1
 H=(-H "X-M2M-Origin: Cforklift01" -H "X-M2M-RVI: 3" -H "Accept: application/json")
 

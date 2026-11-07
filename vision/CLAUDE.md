@@ -1,5 +1,7 @@
 # 4iot VisionAI — 프로젝트 안내 (Claude Code용)
 
+> 2026-11-07 제안: 운영 MN의 새 기본 이름은 `TinyIoT-MN`, CSE ID는 `/tinyiot-mn`이다. Pi 실제 적용은 미확인. 아래 과거 관찰·시험 서버 이름은 당시 값이다. [전환 안내](../docs/cse-naming.md).
+
 이 폴더는 팀 4iot의 **영상·AI 파트(VisionAI)** 코드다. 담당: 상희.
 
 **진행 방식:** 지금은 장비가 없어서 **노트북 + 웹캠으로 먼저 완성도 있게 구현**한다.

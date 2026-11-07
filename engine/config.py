@@ -48,7 +48,7 @@ class RiskConfig:
 def one_m2m_config() -> dict[str, str]:
     """Paths and identity are configurable so transport details stay replaceable."""
     return {
-        "cse_base": os.getenv("ONEM2M_CSE_BASE", "http://127.0.0.1:3000/TinyIoT").rstrip("/"),
+        "cse_base": os.getenv("ONEM2M_CSE_BASE", "http://127.0.0.1:3000/TinyIoT-MN").rstrip("/"),
         "radar_path": os.getenv("ONEM2M_RADAR_PATH", "/AE-forklift01/radar/la"),
         "events_path": os.getenv("ONEM2M_EVENTS_PATH", "/AE-riskengine/events"),
         "origin": os.getenv("ONEM2M_ORIGIN", "Criskengine"),
