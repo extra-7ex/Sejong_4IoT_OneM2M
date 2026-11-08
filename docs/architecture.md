@@ -85,32 +85,101 @@ flowchart TB
     MEC -. "연동 TBD [U8]" .-> CSE
 ```
 
-## 데이터 흐름 상세도: 목표 가설
+## 핵심 Call flow
 
-아래 그림은 **목표 경로를 검토하기 위한 가설**이다. 각 연결의 코드상 근거와 미확인 구간은 이어지는 표를 따른다. 브로커 자체가 CIN을 생성한다고 뜻하지 않는다. MQTT는 oneM2M Binding을 우선 목표로 검토하며 실제 tinyIoT 지원과 ESP 구현은 미확인이다. [E4, U1]
+다음 네 그림은 우선 구현·검증할 경로를 설명한다. **코드**는 구현이 있으나 실제 통합은 미검증, **목표**는 팀이 지향하는 검토 대상, **TBD**는 결정이 필요한 부분이다. 화살표는 실제 장비에서의 성공을 뜻하지 않는다. 단계별 프로토콜과 실패 동작은 아래 표를 따른다.
+
+### 1. 레이더 데이터에서 radar CIN까지
+
+oneM2M MQTT Binding을 우선 목표로 삼는다. ESP 구현과 tinyIoT 지원은 미확인이다. 브로커는 요청을 전달하며 CIN 생성을 직접 수행하는 것으로 가정하지 않는다. [E4, U1–U3]
 
 ```mermaid
 sequenceDiagram
-    participant R as ESP8266 + LD2450
-    participant B as MQTT 브로커
-    participant C as MN-CSE
-    participant V as Vision AI
-    participant E as RiskEngine
-    participant A as 경보기
-    R-->>B: 레이더 데이터 · 목표 [U1, U2]
-    B-->>C: oneM2M 요청 전달 · 목표 [U1]
-    C-->>B: 처리 응답 · 목표 [U1]
-    B-->>R: 응답 수신 · 목표 [U1]
-    E->>C: radar/la HTTP GET · 코드 [E2]
-    C-->>E: CIN 응답 · 실제 형식 미확인
-    V->>C: radar/la HTTP GET · 코드 [E3]
-    V->>C: fusedTracks CIN POST · 코드 [E3]
-    C-->>E: Vision 조언 전달 TBD [U4]
-    Note over E: 최종 위험판단 · 코드 [E2]
-    E->>C: 상태 변화 시 events CIN POST · 코드 [E2]
-    C-->>A: 경보 경로·형식 TBD [U5]
-    Note over A: 실제 수신과 장치 동작 별도 검증 [U6]
+    participant LD as LD2450
+    participant ESP as ESP8266 레이더 노드
+    participant MQTT as MQTT 브로커
+    participant CSE as tinyIoT MN-CSE
+    LD-->>ESP: 표적 프레임 · UART · 목표
+    Note over ESP: x/y mm, v cm/s<br/>ts 생성과 빈 프레임 처리 TBD
+    ESP-->>MQTT: oneM2M CIN 생성 요청 · 목표
+    MQTT-->>CSE: 요청 전달 · 목표
+    Note over CSE: AE-forklift01/radar CNT 아래<br/>CIN 생성 요청 처리 · 목표
+    CSE-->>MQTT: 생성 응답 · 목표
+    MQTT-->>ESP: 응답 전달 · 목표
+    Note over ESP: rqi 상관관계, 타임아웃, 재시도 TBD
 ```
+
+### 2. radar CIN에서 RiskEngine 판단까지
+
+아래는 코드의 기본 입력 방식인 HTTP 폴링이다. HTTP notification 수신 코드도 있지만 SUB는 별도로 구성해야 한다. 실제 CSE와의 통합은 미검증이다. [E2, U2, U3]
+
+```mermaid
+sequenceDiagram
+    participant Engine as RiskEngine
+    participant CSE as tinyIoT MN-CSE
+    loop 설정된 주기로 조회
+        Engine->>CSE: GET AE-forklift01/radar/la · 코드
+        CSE-->>Engine: 최신 CIN 응답 · 실제 환경 미검증
+        Engine->>Engine: CIN 형식, ri, 표적 좌표 확인
+        alt 새롭고 유효한 CIN
+            Engine->>Engine: 현재 거리 계산
+            Engine->>Engine: 연속 좌표로 상대속도와 CPA 추정
+            Note over Engine: 첫 프레임은 CPA 없이<br/>거리 기준 판단 가능
+            Engine->>Engine: 거리와 CPA 기반 상태 판단
+        else 입력 오류 또는 새 데이터 지연
+            Engine->>Engine: UNKNOWN 처리 · 코드
+        end
+    end
+```
+
+### 3. RiskEngine 판단에서 events 이력까지
+
+현재 엔진은 상태가 바뀌면 `AE-riskengine/events` CNT 아래에 CIN 생성을 요청한다. 실제 저장 성공과 장치 알림 성공은 별개다. [E2, U5]
+
+```mermaid
+sequenceDiagram
+    participant Engine as RiskEngine
+    participant CSE as tinyIoT MN-CSE
+    Engine->>Engine: 이전 상태와 현재 판단 비교
+    alt 상태가 바뀜
+        Engine->>CSE: POST AE-riskengine/events · CIN 생성 요청 · 코드
+        CSE-->>Engine: 요청 처리 응답 · 실제 환경 미검증
+        alt 요청 실패
+            Engine->>Engine: 오류 기록과 이후 재시도 가능 · 코드
+        end
+    else 상태가 같음
+        Note over Engine: 새 events CIN을 요청하지 않음 · 코드
+    end
+```
+
+### 4. 판단에서 장치 경보와 장애 대응까지
+
+아래 경보 생성은 기존 팀 문서의 `events`와 `alert` 분리 방향을 보여주는 **목표 가설**이다. 현재 엔진의 별도 `alert` 발행은 확인되지 않았고, 최종 합의와 실제 통합도 확인이 필요하다. [E2, E5, E8, U5, U6]
+
+```mermaid
+sequenceDiagram
+    participant Engine as RiskEngine
+    participant CSE as tinyIoT MN-CSE
+    participant ESP as ESP8266 경보기
+    participant LED as LED
+    Note over Engine,CSE: events 기록과 alert 전달의<br/>순서와 한쪽 실패 시 독립성 TBD
+    Engine-->>CSE: AE-forklift01/alert 경보 상태 발행 · 목표
+    CSE-->>ESP: SUB notification · HTTP /notify · 실제 통합 미검증
+    ESP-->>CSE: HTTP 성공 응답 · 코드: 파싱 전
+    ESP->>ESP: 알림 내용과 level 해석 · 코드
+    ESP->>LED: LED 켜기 또는 끄기 · 코드
+    Note over ESP,LED: 부저 제어와 실제 수행 확인 TBD
+    alt 센서 입력 단절 · 엔진은 정상 실행
+        Engine->>Engine: 입력 오류 또는 stale 시 UNKNOWN · 코드
+        Note over Engine,ESP: UNKNOWN 전달과 장치 동작 TBD
+    else 엔진 또는 Pi 정지 · 경보 경로 단절
+        Note over ESP: UNKNOWN을 보낼 주체가 없을 수 있음<br/>장치 측 무신호 처리와 복구 TBD
+    end
+```
+
+현재 펌웨어의 성공 응답은 파싱이나 물리적 장치 동작의 확인이 아니다. `unknown` 값에서 LED를 끄는 현재 코드도 승인된 장애 정책으로 보지 않는다. 무신호 처리와 재부팅 후 현재 상태 복구는 아래 장애 표에서 별도 추적한다. [E5, U6]
+
+## 구간별 상태 요약
 
 | 구간 | 생산자 → 소비자 / 방식 | 코드·형식 및 확인 상태 |
 |---|---|---|
