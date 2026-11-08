@@ -19,6 +19,7 @@ Call flow 표에서는 같은 의미로 `구현·미검증`, `목표`, `미확�
 
 - 레이더 노드는 지게차에 장착되는 ESP8266 + LD2450 구성을 지향한다. MQTT 브로커는 Raspberry Pi에서 실행할 계획이다. [E1, U1]
 - RiskEngine은 레이더 데이터를 사용해 **최종 위험판단**을 담당한다. [E2, D1]
+- RiskEngine의 HTTP 폴링은 MQTT 작업이 충분히 진행되지 않아 사용자가 임시로 구현한 방식이다. RiskEngine과 tinyIoT 사이에도 MQTT를 사용하려던 의도가 있었을 가능성은 있으나, 당시 팀의 확정 설계였는지는 확인이 필요하다. 이는 사용자 진술이며 실행 검증 결과가 아니다. [D2, U10]
 - Vision AI는 카메라·레이더 정보를 처리하여 판단을 위한 **조언**을 제공한다. 조언을 RiskEngine에 전달하고 반영하는 방법은 미결정이다. [E3, D1, U4]
 - Pi의 tinyIoT MN-CSE, 별도 IN-CSE 및 MEC Sandbox를 활용하는 방향이다. 실제 등록, 이력 전달과 Sandbox 연동은 미확인이다. [E1, E4, U7, U8]
 
@@ -111,14 +112,14 @@ sequenceDiagram
 
 ### 2. radar CIN에서 RiskEngine 판단까지
 
-아래는 코드의 기본 입력 방식인 HTTP 폴링이다. HTTP notification 수신 코드도 있지만 SUB는 별도로 구성해야 한다. 실제 CSE와의 통합은 미검증이다. [E2, U2, U3]
+아래는 MQTT 작업을 기다리는 동안 임시로 구현한 HTTP 폴링이며 현재 코드의 기본 입력 방식이다. HTTP notification 수신 코드도 있지만 SUB는 별도로 구성해야 한다. 향후 MQTT 사용 의도와 방식은 팀 확인이 필요하며 실제 CSE와의 통합은 미검증이다. [E2, D2, U2, U3, U10]
 
 ```mermaid
 sequenceDiagram
     participant Engine as RiskEngine
     participant CSE as tinyIoT MN-CSE
     loop 설정된 주기로 조회
-        Engine->>CSE: GET AE-forklift01/radar/la · 코드
+        Engine->>CSE: GET AE-forklift01/radar/la · 임시 HTTP 코드
         CSE-->>Engine: 최신 CIN 응답 · 실제 환경 미검증
         Engine->>Engine: CIN 형식, ri, 표적 좌표 확인
         alt 새롭고 유효한 CIN
@@ -184,7 +185,7 @@ sequenceDiagram
 | 구간 | 생산자 → 소비자 / 방식 | 코드·형식 및 확인 상태 |
 |---|---|---|
 | 레이더 → radar | ESP8266 → MQTT → MN-CSE | oneM2M MQTT Binding을 우선 목표로 검토한다. 실제 구현·지원은 미확인이며 일반 MQTT와 변환 프로그램은 대안이다. 브로커 연결만으로 CIN 생성 성공을 뜻하지 않는다. [E4, U1] |
-| radar → RiskEngine | MN-CSE → RiskEngine, HTTP 폴링 또는 알림 | 기본 폴링은 `AE-forklift01/radar/la`. `con` 객체 또는 JSON 문자열을 처리하는 코드가 있다. 알림 구독은 엔진이 생성하지 않는다. 실제 데이터 호환성 미검증. [E2] |
+| radar → RiskEngine | MN-CSE → RiskEngine, 임시 HTTP 폴링 또는 HTTP 알림 코드 | 기본 폴링은 `AE-forklift01/radar/la`. `con` 객체 또는 JSON 문자열을 처리한다. 알림 구독은 엔진이 생성하지 않는다. 실제 데이터 호환성과 향후 MQTT 사용 의도·방식은 미확인. [E2, D2, U10] |
 | radar → Vision | MN-CSE → Vision, HTTP 조회 | 같은 radar 경로를 읽는 코드. Vision의 별도 업로더는 시뮬레이션 입력용이다. [E3] |
 | Vision → RiskEngine | Vision → `AE-VisionAI/fusedTracks` → RiskEngine | Vision의 결과 발행 코드는 있으나 RiskEngine 소비·판단 반영은 확인되지 않았다. 전달 방식과 계약 TBD. [E3, E4, U4] |
 | RiskEngine → events | RiskEngine → MN-CSE, HTTP POST | 상태 변화 때 `AE-riskengine/events`에 CIN 생성 요청. 실제 생성 결과 미확인. [E2] |
@@ -199,7 +200,7 @@ sequenceDiagram
 | 1a 수집 | LD2450 → ESP8266 | UART 목표 | 표적 프레임; 발행·빈 프레임 주기 미확인 | 실제 ESP 처리 코드와 실패 동작 미발견 | 목표 / E1, U1–U3 |
 | 1b 생성 요청 | ESP8266 → MN-CSE, 브로커 경유 | oneM2M MQTT Binding 목표; 토픽 TBD | `AE-forklift01/radar` 아래 CIN 생성 요청; 요청 ID·주기 TBD | ESP 발행 실패·재시도 구현 미발견 | 목표 / E4, U1 |
 | 1c 생성 응답 | MN-CSE → ESP8266, 브로커 경유 | MQTT 응답 토픽 TBD | 요청 `rqi`와 응답 상태 상관관계 확인 | ESP 응답 처리·타임아웃 구현 미발견 | 목표 / E4, U1 |
-| 2a 폴링 | RiskEngine → MN-CSE → RiskEngine | HTTP GET `AE-forklift01/radar/la` | 기본 입력 방식; `ri`와 `con.targets` 처리 | 조회 예외·형식 오류·`ri` 누락 시 UNKNOWN 처리; 같은 `ri`는 중복으로 취급 | 구현·미검증 / E2 |
+| 2a 폴링 | RiskEngine → MN-CSE → RiskEngine | HTTP GET `AE-forklift01/radar/la` | 현재 임시 기본 입력 방식; `ri`와 `con.targets` 처리 | 조회 예외·형식 오류·`ri` 누락 시 UNKNOWN 처리; 같은 `ri`는 중복으로 취급 | 구현·미검증 / E2, D2 |
 | 2b 알림 | MN-CSE → RiskEngine | HTTP POST `/notify`; SUB 별도 설정 필요 | verification 또는 CIN 알림; 엔진은 SUB 미생성 | 처리 예외 시 UNKNOWN 기록 시도 후 HTTP 200 응답 | 구현·미검증 / E2 |
 | 2c 판단 | RiskEngine 내부 | 함수 호출 | 거리와 연속 좌표 기반 CPA | 입력 전·오류·stale은 UNKNOWN. 최초 프레임은 속도·CPA가 없어도 거리 기준 상태를 낼 수 있음 | 구현·미검증 / E2 |
 | 5 이력 | RiskEngine → MN-CSE | HTTP POST `AE-riskengine/events` | 상태가 바뀌면 CIN 생성 요청 | 실패 로그를 남기고 마지막 발행 상태를 갱신하지 않아 이후 재시도 가능 | 구현·미검증 / E2 |
@@ -252,7 +253,9 @@ LD2450 출력 프레임에 timestamp는 명시되지 않는다. 레이더 `ts`�
 | U7 | MN → IN 이력 전달 방식 **TBD** | MN에는 기록이 있으나 IN에는 없음 | CSE 등록, 접근 권한, 전달 및 IN 조회를 각각 확인 / 플랫폼 |
 | U8 | MEC Sandbox 역할·연동 **TBD** | 시뮬레이션을 실제 연동으로 오인 | 입출력, oneM2M 접점과 시험 환경 / MEC·플랫폼 |
 | U9 | 저장소 CSE 이름과 권한 설정의 Pi 적용 여부 **미확인** | 경로 조회 실패 또는 권한 오류 | 실제 CSEBase 이름·ID, AE/CNT/SUB/ACP와 클라이언트 설정 / 플랫폼 |
+| U10 | RiskEngine ↔ tinyIoT에 MQTT를 사용하려던 팀 의도와 향후 방식 **미확인** | 임시 HTTP 폴링이 최종 합의로 오인되거나 MQTT 전환 시 요청·알림이 맞지 않음 | 팀 의도 및 범위, 일반 MQTT 또는 oneM2M MQTT Binding, 조회·알림·이력 기록, 토픽·응답·tinyIoT 지원 확인 / 엔진·플랫폼 |
 | D1 | RiskEngine 최종 판단, Vision 조언 제공 **팀 방향** | 책임 경계가 불명확해 다른 구성요소가 상충하는 제어를 내림 | 인터페이스와 판단 우선순위를 구체화 / 엔진·Vision |
+| D2 | 사용자가 MQTT 작업이 진행 중인 상황에서 HTTP 폴링을 임시 구현했다고 설명함 | 임시 구현 배경이 최종 프로토콜 결정으로 오인됨 | 당시 MQTT 의도와 현재 팀 합의를 확인 / 엔진·플랫폼 |
 
 ## 팀 결정: events와 alert
 
@@ -292,4 +295,4 @@ LD2450 출력 프레임에 timestamp는 명시되지 않는다. 레이더 `ts`�
 | E8 | [vision/CLAUDE.md](../vision/CLAUDE.md) 2장 | 2026-11-05 events와 alert 분리 팀 설계 기록; 현재 전체 합의·구현 증거는 아님 |
 | E9 | [Hi-Link LD2450 직렬 통신 프로토콜 v1.03](https://h.hlktech.com/download/HLK-LD2450-24G/1/LD2450%20%E4%B8%B2%E5%8F%A3%E9%80%9A%E4%BF%A1%E5%8D%8F%E8%AE%AE%20V1.03.pdf), 2.3절 | 원시 좌표 mm, 속도 cm/s와 프레임 구성 |
 
-팀 방향 D1 및 MQTT 브로커 배치·마일스톤은 사용자와의 설계 논의를 바탕으로 한 목표이며 실행 검증을 뜻하지 않는다.
+팀 방향 D1, 개발 배경 D2 및 MQTT 브로커 배치·마일스톤은 사용자와의 대화를 바탕으로 하며 실행 검증을 뜻하지 않는다.
