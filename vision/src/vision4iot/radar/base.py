@@ -41,10 +41,11 @@ def to_team_con(targets, ts, flip_x=False, flip_v=False, src=None):
 
 
 def from_team_con(con, flip_x=False, flip_v=False):
-    """팀 radar con(dict 또는 JSON 문자열) → (ts, [Target]). id는 슬롯 순서."""
+    """팀 radar con(dict 또는 JSON 문자열) → (ts, [Target]).
+    id는 표적의 `slot`(LD2450 슬롯 0–2, 실제 레이더 CIN 11/11 확인), 없으면 배열 순서 — 엔진과 같은 규칙."""
     if isinstance(con, str):
         con = json.loads(con)
     sx, sv = _signs(flip_x, flip_v)
-    targets = [Target(i, sx * t["x"] / 1000, t["y"] / 1000, sv * t.get("v", 0) / 100)
+    targets = [Target(int(t.get("slot", i)), sx * t["x"] / 1000, t["y"] / 1000, sv * t.get("v", 0) / 100)
                for i, t in enumerate(con.get("targets", [])[:MAX_TARGETS])]
     return con.get("ts"), targets

@@ -2,6 +2,16 @@
 
 > 2026-11-07 제안: 운영 MN의 새 기본 이름은 `TinyIoT-MN`, CSE ID는 `/tinyiot-mn`이다. Pi 실제 적용은 미확인. 아래 과거 관찰·시험 서버 이름은 당시 값이다. [전환 안내](../docs/cse-naming.md).
 
+> **2026-11-12 현황 (Pi = 팀 공용 원격 서버, `ssh sanghui@<Tailscale 주소>`):**
+> - 시험 대상 MN = **태양 님 MN** `/home/taeyang/safezone-mn-standalone`: `TinyIoT-MN`(ri·csi `tinyiot-mn`), 3000, MQTT 켬, IN(`TinyIoT`/`id-in`, 3001, 광민)에 등록. 손으로 켜고 끈다(재시작은 태양 님께 알림).
+>   이 Vision `config.yaml` 기본값(`TinyIoT-MN`, `AE-forklift01/radar`) 그대로 맞는다. 공용 MN `/home/user/tinyIoT`(`TinyIoT-mn`, `forklift01`, 예전 `TinyIoT` 트리 남음)·시험 CSE `tinyIoT-local`(`TinyIoT`)도 3000을 써서 한 번에 하나만.
+> - MQTT(광민 `onem2m/mqtt.md`): 토픽 `/oneM2M/req/<originator>/tinyiot-mn/json`, 평평한 JSON(`op,to,fr,rqi,ty,rvi,pc`), `to`는 앞 `/` 없이 `TinyIoT-MN/...`.
+>   11/12 확인: radar CIN 생성(Cforklift01, 325/330 `2001`)·radar/la 조회(CVisionAI `2000`)·fusedTracks 생성(CVisionAI `2001`) 모두 MQTT로 성공. Vision 프로그램은 HTTP 그대로(같은 저장소).
+> - **속도:** MN DB가 SD카드라 CIN 하나 약 1.6초(0.6건/초), 10Hz로 밀리면 HTTP와 겹쳐 서버가 죽은 적 있음(RAM DB 복사본에선 정상).
+>   **팀 결정(11/12): 대회는 1초 기준 데모로 하고 한계는 인정한다.** → Vision·엔진의 1초 stale 기준과 맞는지 확인 필요(아직 그대로).
+> - 실제 radar CIN(현태, 11/11): `{"ts", "targets":[{"slot","x","y","v"}]}` → Vision은 `slot`을 표적 id로 쓴다. **x·v 부호는 팀 확인으로 맞음 → `flip_x`·`flip_v` = false 확정.**
+> - 태양 님 MN에 `AE-VisionAI/acp-fused`(CVisionAI 63, Criskengine 34)를 만들어 fusedTracks에 연결(11/12) → 엔진 읽기 200, 엔진 쓰기 403, Vision 쓰기 201.
+
 이 폴더는 팀 4iot의 **영상·AI 파트(VisionAI)** 코드다. 담당: 상희.
 
 **진행 방식:** 지금은 장비가 없어서 **노트북 + 웹캠으로 먼저 완성도 있게 구현**한다.

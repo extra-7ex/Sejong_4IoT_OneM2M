@@ -91,6 +91,23 @@ def test_radar_reader_ignores_startup_la_then_converts_units(cse):
     assert r.get() == ([], False)
 
 
+def test_real_radar_cin_from_pi_uses_slot_as_id(cse):
+    # 현태 님이 Pi에서 받은 실제 radar/la (2026-11-11) 그대로 — con은 문자열, 표적에 slot, src 없음
+    real = {"m2m:cin": {"con": "{\"ts\": 1794372339.82, \"targets\": [{\"slot\": 0, \"x\": 283, \"y\": 545, \"v\": 0}]}",
+                        "ty": 4, "ri": "4-20261111T044539,8200743"}}
+    clk = Clock()
+    r = OneM2MRadar(Client(cse.url, "TinyIoT", "CVisionAI"), "AE-forklift01/radar", clock=clk)
+    r.poll_once()                              # 시작: la 없음(404)
+    cse.la = real
+    r.poll_once()
+    targets, ok = r.get()
+    assert ok and [(t.id, t.x, t.y, t.v) for t in targets] == [(0, 0.283, 0.545, 0.0)]
+    assert round(targets[0].dist, 2) == 0.61
+    cse.la = cin("4-9", [{"slot": 2, "x": -1000, "y": 2000, "v": -30}])   # 슬롯 2 하나만 잡혀도 id는 2
+    r.poll_once()
+    assert [t.id for t in r.get()[0]] == [2]
+
+
 def test_radar_reader_reports_missing_privilege(cse):
     r = OneM2MRadar(Client(cse.url, "TinyIoT", "CVisionAI"), "AE-forklift01/radar")
     cse.la, cse.la_status = cin("4-1", []), 403
