@@ -18,7 +18,7 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 | 목표 | 내용 |
 |---|---|
 | 무태그 감지 | 24GHz mmWave 레이더(HLK-LD2450)로 작업자를 착용 장비 없이 감지한다 |
-| 예측형 판단 | 충돌까지 남은 시간(TTC)으로 위험도를 판정해 장비 자동 감속·정지와 작업자 경보를 수행한다 |
+| 예측형 판단 | 거리와 상대운동 기반 위험 판단을 구현하고, 장비 감속·정지와 작업자 경보를 목표로 한다 |
 | 표준 상호운용성 | 모든 데이터를 oneM2M 표준 리소스로 관리해 관제·분석과 타사 장비 연동이 가능하게 한다 |
 
 
@@ -26,46 +26,28 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 ## 2. 시스템 구성
 
+> **현재 프로토타입과 목표를 구분한다.** 2026-11-12 기준 현태의 설명은 LD2450 → Raspberry Pi UART 직접 연결이다. GitHub 코드와 별도 모의 시험이 존재하지만 실제 레이더·Vision·경보기의 전체 통합은 미검증이다. 서버별 이름·ID도 실제 조회값과 팀 제안을 구분한다. 자세한 내용은 [아키텍처와 통합 상태](docs/architecture.md)를 참고한다.
+
+### 현재 프로토타입
+
 ```mermaid
-flowchart TB
-  subgraph FIELD["현장 (지게차 모형 · 고정형)"]
-    RADAR["레이더 노드<br/>ESP8266 #1 + LD2450"]
-    ACT["장비 동작부<br/>Arduino · 모터 · LED"]
-    ALARM["작업자 경보기<br/>ESP8266 #2 · 부저"]
-    CAM["카메라 노드<br/>웹캠 · OpenCV"]
-  end
-
-  subgraph MEC["MEC 서버 (Raspberry Pi 4B)"]
-    CSE["MN-CSE<br/>tinyIoT"]
-    ENGINE["위험 판단 엔진<br/>거리 · TTC"]
-    AI["AI 추론<br/>궤적 예측 · 핫스팟"]
-  end
-
-  subgraph CLOUD["클라우드 (노트북 또는 대회 플랫폼)"]
-    IN["IN-CSE<br/>이력 · 통계"]
-    DASH["관제 대시보드<br/>위험 지도 · 알림"]
-  end
-
-  RADAR -->|radar 데이터| CSE
-  CAM -->|detect 데이터| CSE
-  CSE <--> ENGINE
-  CSE <--> AI
-  CSE -->|forklift01/alert 알림| RADAR
-  CSE -->|zonealarm01/alert 알림| ALARM
-  RADAR -.->|RUN·WARN 신호 / 로컬 인터락| ACT
-  CSE --> IN --> DASH
+flowchart LR
+  LD["LD2450"] -- "UART · 현태 설명" --> UP["Pi 레이더 업로더"]
+  UP -. "radar CIN<br/>실제 동작 재확인" .-> RAD["MN-CSE<br/>radar"]
+  RAD -. "조회/알림<br/>모의 연동 확인" .-> ENGINE["RiskEngine<br/>거리 · CPA"]
+  ENGINE -. "모의 events 기록" .-> EVENTS["MN-CSE<br/>events"]
+  CAM["카메라"] -. "Vision 입력" .-> VISION["Vision AI"]
+  RAD -. "radar 조회" .-> VISION
+  VISION -. "fusedTracks 생성" .-> FUSED["MN-CSE<br/>fusedTracks"]
+  FUSED -. "모의 CIN 관찰" .-> ENGINE
+  ENGINE -. "alert 작성 미구현" .-> ALERT["MN-CSE<br/>alert"]
+  ALERT -. "HTTP 알림 코드<br/>전체 연결 미검증" .-> ESP["ESP8266<br/>경고 장치"]
+  MN["MN-CSE"] -. "연결 성공 보고<br/>데이터 전달 별도 검증" .-> IN["IN-CSE"]
 ```
 
-| 계층 | 구성 | 역할 |
-|---|---|---|
-| 현장 | 레이더 노드 (ESP8266 #1 + LD2450) | 표적 좌표·속도 수집, 로컬 인터락 판정, CSE 업로드 |
-| 현장 | 장비 동작부 (Arduino + 모터 + LED) | 장비 동력 표현, 상태별 감속·정지·표시 |
-| 현장 | 작업자 경보기 (ESP8266 #2 + 부저) | 작업 구역 내 작업자 경보 |
-| 현장 | 카메라 노드 (웹캠) | 움직임·사람 검출로 레이더 감지 보완 |
-| MEC | Raspberry Pi 4B | MN-CSE(tinyIoT), 위험 판단 엔진, AI 추론 |
-| 클라우드 | 노트북 또는 대회 제공 플랫폼 | IN-CSE, 이력 저장, 관제 대시보드 |
+점선은 코드·모의 시험 또는 향후 연결을 나타내며 실제 장비의 종단 간 성공을 뜻하지 않는다. 현재 ESP8266은 현태 설명에 따르면 LD2450에 직접 연결되지 않고 tinyIoT HTTP 알림을 받는다.
 
-대회에서 MEC 플랫폼을 제공하면 위험 판단 엔진과 AI를 MEC 애플리케이션으로 배포한다.
+**통신 목표:** oneM2M MQTT Binding과 SUB/notification을 사용한다. 독립 시험 서버에서 모의 radar MQTT 발행 → SUB 알림 → RiskEngine → MQTT events 기록을 확인했다. 현재 GitHub의 기존 RiskEngine 기본 통신은 HTTP이며 MQTT 엔진은 별도 작업본이다. 실제 장치 및 최종 서버 적용 여부는 별도로 확인한다.
 
 ### oneM2M 서버로 tinyIoT를 선택한 이유
 
@@ -75,106 +57,81 @@ flowchart TB
 
 ## 3. 동작 원리
 
-### 3.1 감지
+### 3.1 감지와 위험 판단
 
-LD2450을 지게차 모형 후방(후진 사각지대 방향)에 고정한다. 최대 3명을 동시에 추적하며 표적별 x·y 좌표(mm)와 속도(cm/s)를 출력한다(탐지 약 6m, 시야각 ±60°).
+LD2450의 2D 표적 좌표로 현재 거리를 계산하고, 연속 좌표와 시간으로 상대속도 및 최근접 시점 `t_cpa`, 최근접 거리 `d_cpa`를 추정한다. `t_cpa`는 위험 반경에 처음 진입하는 시각이 아니라 일정한 상대속도를 가정한 최근접 시각이다. 입력 누락·오래된 데이터는 `UNKNOWN`으로 구분한다.
 
-### 3.2 위험 판단
+현재 거리 기준 warning 3m, danger 1.5m 및 CPA 기준은 **시험용 가설**이다. 실제 산업안전 기준이나 검증된 제동 거리가 아니다. 센서 좌표계 회전, 설치 오프셋, 차체 크기, 실제 표적 슬롯 유지와 수신 지연은 추가 검증이 필요하다.
 
-```mermaid
-flowchart LR
-  A["입력 수집<br/>x · y · 속도 (최대 3명)"] --> B["TTC 계산<br/>거리 ÷ 접근속도"] --> C["위험 구역 판정<br/>거리 · TTC 임계값"]
-  C --> S["안전<br/>정상 가동"]
-  C --> W["주의 · 감속 + 경보<br/>거리 3m 미만 또는 TTC 3초 미만"]
-  C --> D["위험 · 즉시 정지<br/>거리 1.5m 미만 또는 TTC 1.5초 미만"]
-```
+### 3.2 경보와 장치 제어
 
-TTC는 접근 중인 표적에 대해서만 계산한다. 레이더 노드는 거리 1m 미만을 감지하면 네트워크를 거치지 않고 바로 정지 신호를 낸다(로컬 인터락). 임계값은 초기값이며 시험 후 조정한다.
+현재 GitHub 엔진은 위험 상태를 `events`에 기록하는 코드가 있으며 `alert` 작성과 실제 장치 감속·정지의 전체 연동은 미검증이다. Pi에서 확인된 `LOCAL_DECISION`은 임시 거리 판단으로 alert CIN을 쓰는 별도 코드다. RiskEngine으로 전환할 때 작성 주체가 충돌하지 않도록 조정해야 한다.
 
-### 3.3 상태별 동작
+네트워크 단절 시 독립적으로 모터를 정지시키는 로컬 인터락, `UNKNOWN` 시 장치 동작 및 재가동은 **목표·미확정**이다. LED 점등, 부저, 실제 모터 제어와 각각의 실패 동작을 따로 확인한다.
 
-| 상태 | 모터 | LED | 작업자 경보기 |
-|---|---|---|---|
-| 안전 | 정상 회전 | 초록 | 없음 |
-| 주의 | 감속 (PWM 50%) | 노랑 점멸 | 부저 단속음 |
-| 위험 | 정지 | 빨강 | 부저 연속음 |
-| 복귀 | 안전 상태 3초 유지 후 재가동 | 초록 | 없음 |
+### 3.3 Vision과 IN-CSE
 
-### 3.4 3중 경보 계층
-
-| 계층 | 위치 | 판단 기준 | 특징 |
-|---|---|---|---|
-| 1차 | 레이더 노드 | 거리 | 네트워크와 무관, 지연 최소 |
-| 2차 | MEC (라즈베리파이) | TTC · 다중 표적 · AI 예측 | 구독 알림으로 동작부·경보기 제어 |
-| 3차 | 클라우드 IN-CSE | 누적 이력 | 아차사고 통계, 핫스팟 분석 |
-
-### 3.5 AI 적용
-
-궤적 예측은 표적 이력으로 1~2초 뒤 위치를 예측하고 그 위치 기준으로 TTC를 보정한다. 핫스팟 분석은 누적된 위험 이벤트 좌표를 군집화해 상습 위험 구역을 찾아 대시보드에 표시한다.
-
----
+Vision AI는 카메라 정보와 레이더를 융합해 `fusedTracks`를 발행하는 코드가 있다. RiskEngine의 Vision 입력 관찰은 별도 작업본·모의 시험 단계이며 Vision 조언을 최종 위험 판단에 반영하는 규칙은 미정이다. Pi MN–노트북 IN의 연결 성공은 보고됐으나, 상위 등록과 `events` 데이터 전달은 별도로 검증한다.
 
 ## 4. oneM2M 리소스 설계
 
 ### 4.1 리소스 트리
 
-팀 제안 명명안: MN CSEBase 이름은 `TinyIoT-MN`, CSE ID는 `/tinyiot-mn`이다.
-IN은 각각 `TinyIoT-IN`, `/tinyiot-in`을 제안한다.
-실제 Pi와 IN에 적용·검증된 값은 아니다. 변경 전 [전환 안내](docs/cse-naming.md)를 확인한다.
+아래는 **팀 제안 이름**이다. 실제 서비스에 적용됐다고 단정하지 않는다. MN 제안은 `TinyIoT-MN` / `/tinyiot-mn`, IN 제안은 `TinyIoT-IN` / `/tinyiot-in`이다. 기존 Pi 서비스 및 독립 시험 서버는 서로 다른 설정·DB를 사용했다. [전환 안내](docs/cse-naming.md)
 
 ```text
-TinyIoT-MN                      [CSEBase]  MN-CSE (라즈베리파이, 제안)
-├─ defaultACP                   [ACP]      기본 접근 권한 정책 (자동 생성)
-├─ AE-forklift01                [AE]       지게차      Origin: Cforklift01
-│   ├─ radar                    [CNT]      표적 x·y·속도 (최대 3명), mni 100
-│   └─ alert                    [CNT]      위험 상태 → 감속·정지, mni 20
-│       └─ sub-alert-node       [SUB]      새 데이터 → 레이더 노드(ESP8266)에 알림
-├─ AE-zonealarm01               [AE]       구역 경보기  Origin: Czonealarm01
-│   └─ alert                    [CNT]      부저 동작, mni 20
-├─ AE-riskengine                [AE]       위험 판단 엔진  Origin: Criskengine
-│   └─ events                   [CNT]      위험 이벤트 (→ IN-CSE), mni 100
-└─ AE-camera01                  [AE]       카메라      Origin: Ccamera01
-    └─ detect                   [CNT]      움직임·사람 검출 결과, mni 100
+TinyIoT-MN                   [CSEBase, 제안]
+├─ defaultACP                [ACP]
+├─ AE-forklift01             [AE]
+│  ├─ radar                  [CNT] radar CIN
+│  └─ alert                  [CNT] 장치용 경보, 작성 주체 확인
+├─ AE-riskengine             [AE]
+│  └─ events                 [CNT] 위험 판단 기록
+├─ AE-VisionAI               [AE]
+│  └─ fusedTracks            [CNT] Vision 융합 결과
+├─ AE-zonealarm01            [AE]
+│  └─ alert                  [CNT] 경보기 구상
+└─ AE-camera01               [AE]
+   └─ detect                 [CNT] 기존 카메라 구상
 ```
 
-| ty | 리소스 | 역할 |
-|---|---|---|
-| 5 | CSEBase | 서버 최상위 |
-| 1 | ACP | 접근 권한 정책 |
-| 2 | AE | 등록된 앱·장치 |
-| 3 | CNT | 데이터를 담는 컨테이너 |
-| 4 | CIN | 컨테이너에 쌓이는 데이터 한 건 |
-| 23 | SUB | 구독 (변경 시 알림) |
+실제 CNT·SUB·ACP 존재와 데이터 접근 권한은 실행 중인 서버에서 조회해야 한다. `mni`는 보관할 CIN 수의 제한이다. 표적이 없는 상태에서 실제 업로더가 빈 `targets`를 주기적으로 보내는지는 확인 중이다.
 
-`mni`(최대 인스턴스 수)를 설정해 오래된 데이터는 자동 삭제되고, 레이더는 표적이 있을 때만 업로드해 데이터가 과도하게 쌓이지 않게 한다.
+주요 리소스 유형: CSEBase(ty 5)는 서버 최상위, ACP(1)는 접근 정책, AE(2)는 애플리케이션, CNT(3)는 데이터 컨테이너, CIN(4)은 개별 데이터, SUB(23)는 변경 알림 설정이다.
 
 ### 4.2 구독 흐름
 
-| 구독 대상 | 알림 받는 쪽 | 용도 | 상태 |
-|---|---|---|---|
-| AE-forklift01/radar | 위험 판단 엔진 | 레이더 데이터로 위험 판정 | 예정 |
-| AE-forklift01/alert | 레이더 노드 (ESP8266) | 감속·정지 신호 출력 | 구현 |
-| AE-zonealarm01/alert | 작업자 경보기 (ESP8266 #2) | 부저 동작 | 예정 |
+| 구간 | 현재 상태 |
+|---|---|
+| radar → RiskEngine | GitHub MVP는 HTTP polling 및 HTTP 알림 수신 코드. 별도 작업본에서 MQTT SUB 알림을 모의 시험 |
+| alert → ESP8266 | HTTP 알림 수신 펌웨어·SUB 스크립트가 있으나 RiskEngine부터 실제 장치까지 전체 연결은 미검증 |
+| events → IN-CSE | CSE 연결과 events 실제 전달·조회는 별도 검증 대상 |
+
+MQTT의 토픽 subscribe와 oneM2M의 SUB 리소스는 다른 개념이다. SUB 확인 요청과 알림·응답, 실패 후 복구는 실제 CSE 버전에서 확인한다.
 
 ### 4.3 데이터 형식 (con)
 
-| 컨테이너 | 작성 | 형식 예시 |
+| 입력·출력 | 현재 코드·시험 가정 | 확인할 사항 |
 |---|---|---|
-| AE-forklift01/radar | 레이더 | `{"ts": 1760360000.12, "targets": [{"x": 373, "y": 366, "v": -8}]}` |
-| AE-camera01/detect | 카메라 | `{"ts": 1760360000.15, "objects": [{"cls": "motion", "bbox": [120, 80, 60, 150]}]}` |
-| AE-forklift01/alert | 엔진 | `{"level": "danger", "dist": 1200, "ttc": 1.2}` |
-| AE-riskengine/events | 엔진 | `{"ts": 1760360000.12, "level": "danger", "target": 0}` |
+| radar | `x`, `y`: mm; `v`: cm/s. 실제 CIN 예시에 `slot` 포함 보고 | 단위·부호·timestamp·빈 프레임 주기와 슬롯 유지 |
+| fusedTracks | `x`, `y`, `dist_m`: m; `ttc_s`: 초 | 원점·축 방향·표적 ID·시각·유효 기간 |
+| events | RiskEngine 판단 이력; `status`, `level`, `reason` 등 | 생성·조회와 IN 전달 |
+| alert | 장치용 상태 메시지 | 필드·작성 주체 및 UNKNOWN 처리 합의 |
 
-`ts`는 Unix 시간(초, 소수점 포함), 거리는 mm, 속도는 cm/s, `level`은 `safe`, `warn`, `danger` 중 하나다. 레이더와 카메라 데이터를 시간으로 짝지을 수 있도록 모든 장치는 인터넷 시간 동기화를 켠다.
+CIN의 `con`은 JSON 문자열일 수 있다. Vision의 `ttc_s`와 RiskEngine의 `t_cpa`는 서로 다른 계산이다. 센서 timestamp와 엔진의 monotonic 수신 시각은 혼용하지 않는다.
+
+예를 들어 radar의 한 표적은 `{"ts": 1760360000.12, "targets": [{"slot": 0, "x": 373, "y": 366, "v": -8}]}` 형태를 사용할 수 있다. 이는 형식 예시이며 슬롯의 추적 연속성·실제 빈 프레임 전송을 보장하지 않는다.
 
 ### 4.4 통신 바인딩
 
-| 구간 | 방식 | 비고 |
-|---|---|---|
-| 디바이스 ↔ CSE | 현재 HTTP, 이후 MQTT | 설계상 MQTT 바인딩(브로커: Mosquitto). 우선 HTTP로 구독·알림 흐름을 완성한 뒤 전환 |
-| CSE ↔ CSE | HTTP | MN-CSE(라즈베리파이) ↔ IN-CSE(클라우드) |
-
----
+| 구간 | 현재 확인 및 목표 |
+|---|---|
+| LD2450 → Pi | UART 직접 연결: 현태의 현재 프로토타입 설명 |
+| 장치·업로더 → MN | HTTP 코드와 모의 MQTT CIN 생성 시험. 실제 장치별 MQTT 발행은 확인 필요 |
+| MN ↔ RiskEngine | GitHub MVP는 HTTP polling/HTTP 알림 코드. 별도 작업본에서 MQTT 알림 입력 및 MQTT events 출력을 모의 시험 |
+| MN → Vision → fusedTracks | Vision 코드 기준 HTTP 조회·발행; 실제 장치 통합 확인 필요 |
+| MN → ESP | HTTP 알림 수신 코드; 현재 SUB 및 전체 연동 확인 필요 |
+| MN ↔ IN | 연결 성공 보고. 실제 리소스 전달·이력 조회는 별도 확인 |
 
 ## 5. 저장소 구조
 
@@ -198,7 +155,7 @@ Sejong_4IoT_OneM2M/
 ├─ camera/                      카메라 파트
 │  ├─ README.md
 │  └─ motion_detect.py          웹캠 모션 감지 → AE-camera01/detect
-├─ engine/                      위험 판단 엔진 (TTC, 2단계 판정)
+├─ engine/                      위험 판단 엔진 (거리·CPA)
 │  └─ README.md
 └─ esp8266/
    ├─ led_server/               (초기 버전) /on·/off 웹서버
@@ -220,7 +177,7 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | 장비 | 수량 | 용도 |
 |---|---|---|
 | HLK-LD2450 24GHz 레이더 | 1 | 작업자 무태그 감지 |
-| ESP8266 (NodeMCU) | 2 | #1 레이더 노드, #2 작업자 경보기 |
+| ESP8266 (NodeMCU) | 2 | 경고 장치 등 역할·실제 연결 구성 확인 필요 |
 | Arduino | 1 | 장비 동작부 제어 (모터·LED·부저) |
 | Raspberry Pi 4B | 1 | MEC 서버 (tinyIoT, 엔진, AI) |
 | 모터 + 모터 드라이버 (L298N/L9110S) | 1 | 장비 동력 표현, 속도·방향 제어 |
@@ -255,7 +212,7 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 
 통신 규격은 256000bps, 8N1, 3.3V 레벨이다.
 
-**최종 구성 (LD2450 → ESP8266 #1 → Arduino)**
+**기존 목표 배선안 (현재 프로토타입 아님; 최종 채택 미확정)**
 
 | 연결 | 핀 | 비고 |
 |---|---|---|
