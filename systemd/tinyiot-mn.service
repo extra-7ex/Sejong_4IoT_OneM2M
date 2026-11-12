@@ -1,0 +1,17 @@
+[Unit]
+Description=tinyIoT MN-CSE
+After=network-online.target mosquitto.service tinyiot-in-local.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# <PI_USER>, 경로는 실제 환경에 맞게 수정
+User=<PI_USER>
+WorkingDirectory=/home/<PI_USER>/tinyIoT/source/server
+ExecStart=/home/<PI_USER>/tinyIoT/source/server/server
+# MN은 IN 등록에 실패하면 스스로 종료하므로 always로 재시도
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
