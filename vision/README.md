@@ -69,3 +69,29 @@ python3 -m venv .venv
 
 시험용 도구(레이더·장비가 없을 때): `tools/start_local_cse.sh`(시험용 tinyIoT, 팀 설정과 포트 3000이 겹침),
 `tools/setup_test_acp.sh`(접근 권한), `tools/run_radar_flow.sh`(가짜 수신기 + 팀 엔진 `~/riskengine` + 레이더 업로더 sim).
+
+## License
+
+This module (`vision/`) is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. See [LICENSE](LICENSE).
+
+VisionAI imports Ultralytics YOLO11, which is AGPL-3.0, so the whole VisionAI program is released under the same license.
+The rest of this repository (`engine/`, `radar/`, `onem2m/`, `esp8266/`, `camera/`) is licensed under **Apache 2.0**.
+Those parts run as separate programs. They exchange data with VisionAI only through the oneM2M CSE (HTTP/MQTT) and do not link to its code, so AGPL does not apply to them.
+The competition license mentor reviewed this split on 2026-11-13 and saw no problem for the competition.
+
+| Component | License | In this repository? |
+|---|---|---|
+| VisionAI source (`src/`, `tools/`, `tests/`) | AGPL-3.0 | Yes |
+| [Ultralytics YOLO11](https://github.com/ultralytics/ultralytics) code | AGPL-3.0, © Ultralytics | No. Installed with `pip install -r requirements.txt` |
+| YOLO11 pose weights `yolo11n-pose.pt` | AGPL-3.0, © Ultralytics | No (`.gitignore`). Downloaded by Ultralytics on first run |
+| OpenCV (`opencv-python`) | Apache 2.0 | No |
+| NumPy | BSD-3-Clause | No |
+| PyYAML | MIT | No |
+| pyserial | BSD-3-Clause | No |
+| lap | BSD-2-Clause | No |
+| pytest (tests only) | MIT | No |
+
+If you modify VisionAI and let other people use it over a network, AGPL-3.0 section 13 requires you to offer them the modified source code.
+If you need to use YOLO11 without these conditions, Ultralytics sells an [Enterprise License](https://www.ultralytics.com/license).
+
+> 요약: `vision/`은 YOLO11 때문에 AGPL-3.0, 나머지는 Apache 2.0. 서로 oneM2M으로만 통신하므로 AGPL이 다른 부분에 퍼지지 않는다. 대회 라이선스 멘토가 11/13에 문제없다고 확인했다.
