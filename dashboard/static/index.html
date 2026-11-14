@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeZone 관제</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e6e9ee; --muted: #8a93a1;
+    --safe: #2fb36d; --warn: #f2a516; --danger: #e5484d; --unknown: #6b7480; --accent: #4c8dff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  header .sp { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--line);
+          border-radius: 999px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--unknown); }
+  .dot.ok { background: var(--safe); } .dot.bad { background: var(--danger); }
+  main { display: grid; grid-template-columns: minmax(380px, 1.1fr) minmax(360px, 1fr); gap: 16px; padding: 16px 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  #banner { grid-column: 1 / -1; display: flex; align-items: center; gap: 24px; border-left: 6px solid var(--unknown); }
+  #status { font-size: 34px; font-weight: 750; min-width: 170px; }
+  #reason { color: var(--muted); }
+  .metrics { display: flex; gap: 28px; margin-left: auto; }
+  .metric .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .metric .k { font-size: 12px; color: var(--muted); }
+  .SAFE { color: var(--safe); } .WARNING { color: var(--warn); } .DANGER { color: var(--danger); } .UNKNOWN { color: var(--unknown); }
+  #banner.b-SAFE { border-left-color: var(--safe); } #banner.b-WARNING { border-left-color: var(--warn); }
+  #banner.b-DANGER { border-left-color: var(--danger); background: #2a1517; } #banner.b-UNKNOWN { border-left-color: var(--unknown); }
+  canvas { width: 100%; height: auto; display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .stack { display: grid; gap: 16px; align-content: start; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.reason { white-space: normal; color: var(--muted); font-size: 12px; }
+  .bars { display: grid; gap: 7px; }
+  .bar { display: grid; grid-template-columns: 76px 1fr 44px; align-items: center; gap: 10px; font-size: 13px; }
+  .bar .track { height: 10px; background: #0f1216; border-radius: 5px; overflow: hidden; }
+  .bar .fill { height: 100%; border-radius: 5px; }
+  .muted { color: var(--muted); } .warnline { color: var(--warn); }
+  #log-wrap { max-height: 330px; overflow: auto; }
+  select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } .metrics { gap: 16px; } #banner { flex-wrap: wrap; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>SafeZone 관제 대시보드</h1>
+  <span class="pill"><span class="dot" id="h-mn"></span><span id="h-mn-t">MN-CSE</span></span>
+  <span class="pill" id="h-in-wrap" hidden><span class="dot" id="h-in"></span><span id="h-in-t">IN-CSE</span></span>
+  <span class="sp"></span>
+  <span class="muted" id="clock">연결 중…</span>
+</header>
+
+<main>
+  <section class="panel" id="banner">
+    <div id="status" class="UNKNOWN">UNKNOWN</div>
+    <div>
+      <div id="reason">이벤트 대기 중</div>
+      <div class="muted" id="decided">-</div>
+    </div>
+    <div class="metrics">
+      <div class="metric"><div class="v" id="m-dist">-</div><div class="k">현재 거리</div></div>
+      <div class="metric"><div class="v" id="m-tcpa">-</div><div class="k">최근접 시각 t<sub>cpa</sub></div></div>
+      <div class="metric"><div class="v" id="m-dcpa">-</div><div class="k">예측 최소거리 d<sub>cpa</sub></div></div>
+      <div class="metric"><div class="v" id="m-tgt">-</div><div class="k">레이더 표적</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>위험 구역 맵 <span class="muted" style="text-transform:none;letter-spacing:0" id="radar-age"></span></h2>
+    <canvas id="map" width="760" height="560"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>레이더 표적</span>
+      <span><i style="background:transparent;border:2px solid #c9d1dc"></i>Vision 추적</span>
+      <span><i style="background:rgba(229,72,77,.55);border-radius:2px"></i>핫스팟 (선택 기간 위험 이벤트)</span>
+      <span>원: 위험 <b class="DANGER" id="lg-d">1.5 m</b> · 주의 <b class="WARNING" id="lg-w">3.0 m</b></span>
+    </div>
+  </section>
+
+  <div class="stack">
+    <section class="panel">
+      <h2>데이터 수신 상태</h2>
+      <table><thead><tr><th>소스</th><th>경로</th><th>상태</th><th>마지막 갱신</th></tr></thead>
+        <tbody id="sources"></tbody></table>
+    </section>
+    <section class="panel">
+      <h2>이벤트 통계
+        <select id="range" style="float:right">
+          <option value="1">1시간</option><option value="24" selected>24시간</option><option value="168">7일</option>
+        </select></h2>
+      <div class="bars" id="bars"></div>
+      <div class="muted" style="margin-top:8px;font-size:12px" id="stats-note"></div>
+    </section>
+    <section class="panel">
+      <h2>위험 이벤트 기록</h2>
+      <div id="log-wrap"><table><thead><tr><th>시각</th><th>상태</th><th>거리</th><th>t<sub>cpa</sub></th><th>사유</th></tr></thead>
+        <tbody id="log"></tbody></table></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const COLORS = { SAFE: '#2fb36d', WARNING: '#f2a516', DANGER: '#e5484d', UNKNOWN: '#6b7480' };
+const SRC_LABEL = { radar: '레이더', events: '위험 판단', fused: 'Vision', alert: '경보(alert)' };
+let latest = null, hotspots = [], params = { warning_distance_m: 3, danger_distance_m: 1.5 };
+
+const fmt = (v, unit, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? '-' : `${Number(v).toFixed(d)} ${unit}`;
+const ago = s => s === null || s === undefined ? '-' : s < 60 ? `${s.toFixed(0)}초 전` : s < 3600 ? `${(s/60).toFixed(0)}분 전` : `${(s/3600).toFixed(1)}시간 전`;
+const hhmmss = t => { const d = new Date(t * 1000), p = n => String(n).padStart(2, '0'); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function getJSON(url) { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); }
+
+function setHealth(key, h) {
+  const dot = $('h-' + key), txt = $('h-' + key + '-t');
+  if (!h) return;
+  dot.className = 'dot ' + (h.ok ? 'ok' : 'bad');
+  txt.textContent = `${key.toUpperCase()}-CSE ${h.ok ? (h.rn || '') + ' · ' + h.ms + 'ms' : '연결 실패 (' + h.detail + ')'}`;
+}
+
+function renderState(s) {
+  latest = s;
+  setHealth('mn', s.health.mn);
+  if (s.health.in) { $('h-in-wrap').hidden = false; setHealth('in', s.health.in); }
+  $('clock').textContent = '갱신 ' + hhmmss(s.now);
+
+  const ev = s.sources.events?.con;
+  const decision = (ev && typeof ev === 'object') ? ev : null;
+  let status = decision ? String(decision.status || 'UNKNOWN').toUpperCase() : 'UNKNOWN';
+  if (!COLORS[status]) status = 'UNKNOWN';
+  if (decision?.parameters) params = decision.parameters;
+  $('status').textContent = status; $('status').className = status;
+  $('banner').className = 'panel b-' + status;
+  $('reason').textContent = decision ? (decision.reason || '') : '위험 판단 이벤트가 아직 없음';
+  $('decided').textContent = decision ? `판정 기록 ${ago(s.sources.events.age_s)} (상태가 바뀔 때만 기록됨)` : '';
+  $('m-dist').textContent = fmt(decision?.distance_m, 'm');
+  $('m-tcpa').textContent = fmt(decision?.t_cpa_s, 's', 1);
+  $('m-dcpa').textContent = fmt(decision?.d_cpa_m, 'm');
+  const radar = s.sources.radar?.con;
+  $('m-tgt').textContent = Array.isArray(radar?.targets) ? radar.targets.length : '-';
+  $('lg-d').textContent = params.danger_distance_m + ' m'; $('lg-w').textContent = params.warning_distance_m + ' m';
+
+  const ra = s.sources.radar?.age_s;
+  $('radar-age').textContent = ra == null ? '· 레이더 데이터 없음' : (ra > 2 ? `· 레이더 ${ago(ra)} 이후 끊김` : `· 레이더 ${ago(ra)}`);
+  $('radar-age').className = ra == null || ra > 2 ? 'warnline' : 'muted';
+
+  $('sources').innerHTML = ['radar', 'events', 'fused', 'alert'].map(k => {
+    const src = s.sources[k] || {}; const st = src.state || 'init';
+    const cls = st === 'ok' ? 'SAFE' : st === 'empty' ? 'muted' : st === 'init' ? 'muted' : 'DANGER';
+    const label = st === 'ok' ? '수신' : st === 'empty' ? '데이터 없음' : st === 'init' ? '대기' : st.replace('error:', '오류 ');
+    return `<tr><td>${SRC_LABEL[k]}</td><td class="muted">${esc(s.config[k + '_path'])}</td><td class="${cls}">${esc(label)}</td><td>${ago(src.age_s)}</td></tr>`;
+  }).join('');
+  drawMap();
+}
+
+function drawMap() {
+  const cv = $('map'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const rangeM = 6, ox = W / 2, oy = H - 30, scale = (H - 50) / rangeM;   // 레이더 원점: 아래 가운데, y = 전방
+  const P = (xm, ym) => [ox + xm * scale, oy - ym * scale];
+  g.clearRect(0, 0, W, H);
+  // 시야각 ±60°
+  g.fillStyle = '#12161b'; g.beginPath(); g.moveTo(ox, oy);
+  g.arc(ox, oy, rangeM * scale, -Math.PI / 2 - Math.PI / 3, -Math.PI / 2 + Math.PI / 3); g.closePath(); g.fill();
+  // 핫스팟
+  const maxC = Math.max(1, ...hotspots.map(h => h.DANGER * 2 + h.WARNING));
+  for (const h of hotspots) {
+    const w = h.size_mm / 1000 * scale, [x, y] = P(h.x_mm / 1000, h.y_mm / 1000);
+    g.fillStyle = `rgba(229,72,77,${0.12 + 0.5 * (h.DANGER * 2 + h.WARNING) / maxC})`;
+    g.fillRect(x - w / 2, y - w / 2, w, w);
+  }
+  // 거리 링
+  g.lineWidth = 1;
+  for (let m = 1; m <= rangeM; m++) { g.strokeStyle = '#262c35'; g.beginPath(); g.arc(ox, oy, m * scale, Math.PI, 2 * Math.PI); g.stroke();
+    g.fillStyle = '#5b6470'; g.font = '11px system-ui'; g.fillText(m + 'm', ox + 4, oy - m * scale + 12); }
+  for (const [r, c] of [[params.warning_distance_m, COLORS.WARNING], [params.danger_distance_m, COLORS.DANGER]]) {
+    g.strokeStyle = c; g.setLineDash([6, 5]); g.lineWidth = 1.5; g.beginPath(); g.arc(ox, oy, r * scale, Math.PI, 2 * Math.PI); g.stroke(); g.setLineDash([]);
+  }
+  // 지게차(레이더) 위치
+  g.fillStyle = '#c9d1dc'; g.fillRect(ox - 18, oy, 36, 16); g.fillStyle = '#0f1216'; g.font = '10px system-ui'; g.fillText('지게차', ox - 15, oy + 12);
+  if (!latest) return;
+  // Vision 추적 (m 단위)
+  const fused = latest.sources.fused?.con;
+  if (fused && Array.isArray(fused.tracks)) for (const t of fused.tracks) {
+    if (typeof t.x !== 'number' || typeof t.y !== 'number') continue;
+    const [x, y] = P(t.x, t.y); g.strokeStyle = t.state === 'ghost_suspect' ? '#6b7480' : '#c9d1dc'; g.lineWidth = 2;
+    g.beginPath(); g.arc(x, y, 11, 0, 2 * Math.PI); g.stroke();
+    g.fillStyle = '#9aa4b2'; g.font = '11px system-ui'; g.textAlign = 'right'; g.fillText(`V${t.id ?? ''} ${t.posture ?? ''}`, x - 14, y + 4); g.textAlign = 'left';
+  }
+  // 레이더 표적 (mm 단위)
+  const radar = latest.sources.radar?.con;
+  const stale = (latest.sources.radar?.age_s ?? 99) > 2;
+  if (radar && Array.isArray(radar.targets)) radar.targets.forEach((t, i) => {
+    if (typeof t.x !== 'number' || typeof t.y !== 'number') return;
+    const xm = t.x / 1000, ym = t.y / 1000, d = Math.hypot(xm, ym);
+    const c = d <= params.danger_distance_m ? COLORS.DANGER : d <= params.warning_distance_m ? COLORS.WARNING : '#4c8dff';
+    const [x, y] = P(xm, ym); g.globalAlpha = stale ? 0.35 : 1;
+    g.fillStyle = c; g.beginPath(); g.arc(x, y, 7, 0, 2 * Math.PI); g.fill();
+    g.fillStyle = '#e6e9ee'; g.font = '12px system-ui';
+    g.fillText(`#${i} ${d.toFixed(2)}m${typeof t.v === 'number' ? ' · ' + t.v + 'cm/s' : ''}`, x + 16, y + 4);
+    g.globalAlpha = 1;
+  });
+}
+
+async function refreshSlow() {
+  try {
+    const hours = $('range').value;
+    const [events, stats] = await Promise.all([getJSON('/api/events?limit=100'), getJSON('/api/stats?hours=' + hours)]);
+    $('log').innerHTML = events.length ? events.map(e => `<tr><td>${hhmmss(e.seen_at)}</td><td class="${esc(e.status)}">${esc(e.status)}</td>
+      <td>${fmt(e.distance_m, 'm')}</td><td>${fmt(e.t_cpa_s, 's', 1)}</td><td class="reason">${esc(e.reason)}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="muted">대시보드 실행 후 기록된 이벤트가 없음</td></tr>';
+    const max = Math.max(1, ...Object.values(stats.counts));
+    $('bars').innerHTML = ['DANGER', 'WARNING', 'UNKNOWN', 'SAFE'].map(k => `<div class="bar"><span class="${k}">${k}</span>
+      <div class="track"><div class="fill" style="width:${100 * stats.counts[k] / max}%;background:${COLORS[k]}"></div></div><span>${stats.counts[k]}</span></div>`).join('');
+    $('stats-note').textContent = `상태 전환 ${stats.total}건 · 핫스팟 칸 ${stats.hotspots.length}개 (격자 ${latest?.config?.grid_mm ?? 500} mm)`;
+    hotspots = stats.hotspots; drawMap();
+  } catch (e) { $('stats-note').textContent = '통계를 불러오지 못함: ' + e.message; }
+}
+
+async function refreshFast() {
+  try { renderState(await getJSON('/api/state')); }
+  catch (e) { $('clock').textContent = '대시보드 서버 연결 끊김'; $('clock').className = 'warnline'; return; }
+  $('clock').className = 'muted';
+}
+
+$('range').onchange = refreshSlow;
+refreshFast(); refreshSlow();
+setInterval(refreshFast, 500); setInterval(refreshSlow, 3000);
+</script>
+</body>
+</html>
