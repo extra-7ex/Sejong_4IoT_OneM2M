@@ -9,7 +9,9 @@
 #
 #   bash tools/setup_test_acp.sh                       # 기본 CSE http://127.0.0.1:3000/TinyIoT
 #   bash tools/setup_test_acp.sh http://<IP>:3000/TinyIoT
+#   bash tools/setup_test_acp.sh http://127.0.0.1:3000/TinyIoT-MN   # 다른 CSE 이름도 그대로
 CSE=${1:-http://127.0.0.1:3000/TinyIoT}
+N=${CSE##*/}                     # CSE 이름 (acpi 경로 앞부분), 예 TinyIoT / TinyIoT-MN
 H=(-H "X-M2M-RVI: 3" -H "Accept: application/json")
 ORIG=Cforklift01
 
@@ -26,12 +28,12 @@ acp() {  # acp <부모 AE> <이름> <다른 AE들(JSON 배열)> <acop>   — 주
 ORIG=Cforklift01
 acp AE-forklift01 acp-radar '["Criskengine","CVisionAI"]' 34
 acp AE-forklift01 acp-alert '["Criskengine"]' 3
-req PUT /AE-forklift01/radar 3 '{"m2m:cnt":{"acpi":["TinyIoT/AE-forklift01/acp-radar"]}}'
-req PUT /AE-forklift01/alert 3 '{"m2m:cnt":{"acpi":["TinyIoT/AE-forklift01/acp-alert"]}}'
+req PUT /AE-forklift01/radar 3 '{"m2m:cnt":{"acpi":["'"$N"'/AE-forklift01/acp-radar"]}}'
+req PUT /AE-forklift01/alert 3 '{"m2m:cnt":{"acpi":["'"$N"'/AE-forklift01/acp-alert"]}}'
 
 ORIG=CVisionAI
 req POST "" 2 '{"m2m:ae":{"rn":"AE-VisionAI","api":"NVisionAI","rr":true,"srv":["3"]}}'
 req POST /AE-VisionAI 3 '{"m2m:cnt":{"rn":"fusedTracks","mni":100}}'
 acp AE-VisionAI acp-fused '["Criskengine"]' 34
-req PUT /AE-VisionAI/fusedTracks 3 '{"m2m:cnt":{"acpi":["TinyIoT/AE-VisionAI/acp-fused"]}}'
+req PUT /AE-VisionAI/fusedTracks 3 '{"m2m:cnt":{"acpi":["'"$N"'/AE-VisionAI/acp-fused"]}}'
 echo "(201 = 만듦, 409 = 이미 있음, 200 = 연결함)"

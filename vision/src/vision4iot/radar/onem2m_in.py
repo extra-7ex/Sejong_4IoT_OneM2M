@@ -37,6 +37,8 @@ class OneM2MRadar:
         except OSError as e:
             self.last_error = f"CSE 연결 안 됨: {e}"
             return
+        if status == 404 and self._ri is None:
+            self._first = False                # 시작 때 la가 없었다 → 다음에 오는 CIN은 새 값
         if status != 200 or not isinstance(body, dict) or "m2m:cin" not in body:
             self.last_error = f"HTTP {status}" + (" — VisionAI 읽기 권한(ACP) 필요" if status == 403 else "")
             return
