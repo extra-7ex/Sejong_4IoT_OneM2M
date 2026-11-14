@@ -1,4 +1,20 @@
 # SafeZone 위험판단 엔진 MVP
+## MQTT 알림 입출력 — 독립 시험용
+
+`--transport mqtt-notification`은 paho-mqtt 2.x와 정확한 `--mqtt-topic`을 요구한다. 현재 구현은 관찰된 tinyIoT의 직접 `m2m:sgn` JSON을 읽고 기존 radar 판정에 전달한다. SUB 리소스는 자동 생성하지 않으며, CSE의 SUB 및 브로커 토픽은 별도로 구성해야 한다. 실험 환경에서 `nu=mqtt://127.0.0.1:1883/CsafezoneNotify/json`은 `/oneM2M/req/safezone-mqtt-test/CsafezoneNotify/json`에 직접 `m2m:sgn`을 생성했다. 이는 해당 시험용 tinyIoT 버전의 동작이며 다른 버전도 같다고 단정하지 않는다.
+
+`--mqtt-events --mqtt-cse-id <슬래시 없는 ID>`를 함께 주면 events CIN 생성도 MQTT를 사용한다. 요청의 rqi를 응답과 대조하고 rsc=2001을 확인한다. 응답 timeout은 생성 여부를 알 수 없으므로 같은 상태를 자동 재시도하지 않고 오류를 기록한다. 다른 상태가 생기거나 운영자가 CSE를 확인해 해결하기 전에는 해당 상태의 저장 여부가 미확인이다. HTTP 출력을 계속 쓰려면 `--mqtt-events`를 생략한다.
+
+브로커가 끊어지면 UNKNOWN을 기록하고 재연결·재구독을 시도한다. 반복 CIN ri는 중복 판정하지 않으며 retained 및 오래 대기한 메시지를 거부한다. 수신 시각은 엔진 수신 monotonic 기준이며, 네트워크에서 오래 지연된 메시지를 모두 식별한다고 보장하지 않는다. 시험용 stale 값은 실제 속도 측정 후 결정해야 한다.
+
+실제 시험 CSE의 구독 검증 메시지는 rqi 없는 직접 `m2m:sgn`이었고 CSE는 앱 응답 없이 SUB를 생성했다. 본 어댑터는 이 검증 알림을 기록만 하며, 표준 oneM2M 검증 응답을 보내지 않는다. SUB 검증 응답·MQTT 접근 인증·TLS·timeout 후 저장 여부 확인 및 재처리 정책은 미구현/미검증이다. 실제 장치의 alert 제어에는 사용하지 않는다.
+
+```bash
+python -m pip install -r engine/requirements-mqtt.txt
+python -m engine.main --transport mqtt-notification --mqtt-topic '<알림 토픽>' --mqtt-events --mqtt-cse-id '<CSE ID>'
+```
+
+
 
 ## 먼저 확인할 항목 — 실제 연결 전에 우선 처리
 
