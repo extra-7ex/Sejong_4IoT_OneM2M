@@ -88,3 +88,23 @@ python3 test_cse_discovery.py
 기본 MEC 시험 환경과 `safezone-vision-test` 앱 준비가 선행돼야 한다. 이 컨테이너에는 영구 볼륨이 없고 SQLite는 컨테이너 내부에 생성된다. 이미지 로컬 크기는 약 631 MB이며 빌드 캐시는 별도 공간을 사용한다. CAdmin은 시험 전용이다. 스크립트는 무작위 이름의 AE·CNT·모의 CIN을 생성하고 MEC 임시 등록을 삭제한다. 시험 CSE의 AE·CIN은 확인을 위해 남긴다. 127.0.0.1 주소는 같은 PC에서만 유효하다. 다른 Host 접근, 인증·권한, 운영 보안은 미검증이다. 종료: `docker stop safezone-mec-tinyiot-test` (컨테이너는 삭제하지 않음).
 
 실측: AE/CNT/CIN POST 각각 HTTP 201 및 oneM2M rsc 2001; MEC 등록 201, 발견 200; 발견한 URI로 CIN 조회 HTTP 200 및 rsc 2000; JSON 문자열 `con` 해석 PASS; 임시 MEC 등록 삭제 204. Vision 실측 결과, RiskEngine 통합, stale 판단, 실제 MN-CSE 및 두 Host 연결은 미검증이다.
+
+## 모의 fusedTracks 신선도 점검
+
+`python3 -B -m unittest -v test_fused_freshness`로 6개 시험을 실행한다. `fused_freshness.py`는 `con`의 JSON 문자열/객체, ts, cam_ok, tracks의 기본 형식을 점검한다. 임시 가정: ts는 Unix 초 단위 프레임 촬영 시각, 소비자와 생산자 시계는 동기화, 최대 연령 3초 및 미래 허용 오차 0.5초. 실제 정책이나 안전 기준이 아니다. 유효하지 않음, 미래 시간으로 인한 시계 불확실, 오래됨, 카메라 오류, 기본 조건 통과를 구분한다. 빈 tracks는 정상 형식이지만 안전함을 뜻하지 않는다. track 세부 필드, 추적 정확도와 RiskEngine 판단은 검사하지 않는다.
+
+모의 시험 6개 PASS. 별도 CSE 조회 연계 시험에서 FRESHNESS OK 확인. 기존 시험을 두 번째로 실행하면 AE originator 중복으로 HTTP 403이 발생해 시험마다 고유 originator를 쓰도록 수정했고, 이후 연속 두 번 성공했다. CAdmin의 시험용 읽기·쓰기 권한은 실제 ACP 검증이 아니다. 시험 CSE 안에 모의 리소스가 누적된다.
+
+## 기존 Vision 관찰 코드와 MEC 발견 연결 실험
+
+`test_mec_fused_observer.py`는 외부 작업 사본 `engine.fused_tracks.FusedPoller`를 시험 전용 어댑터로 호출한다. 이 PR에 해당 엔진 사본은 포함되지 않으므로 현재 독립 재현은 불가능하며 별도로 사본 경로를 `PYTHONPATH`로 지정해야 한다. Git 관리가 없는 로컬 사본을 사용했으며 GitHub 동일 버전 여부는 미확인이다. GitHub Draft PR #14는 MQTT 변경만 포함하고 Vision 조회를 포함하지 않는다.
+
+격리 tinyIoT 모의 CIN + MEC 임시 서비스에 대한 실행 결과: 첫 CIN `WAITING_FOR_NEW_CIN`, 다음 CIN `FRESH`, 임시 MEC 서비스 삭제 204. 시험 어댑터가 로컬 예상 URI만 허용하고 기존 관찰기에 전달한다. 이는 실제 엔진 프로세스에 MEC discovery를 통합한 것이 아니고 실제 Vision, radar, 위험 판단 및 안전 동작은 미검증이다. 실제 구현은 주소 신뢰·Originator/ACP, 동적 발견 실패·재시도, producer timestamp 및 소비자 monotonic 기준을 별도 설계해야 한다. 모의 AE/CIN은 시험 CSE에 남는다.
+
+## Vision 출력 함수 형식 확인 (2026-11-15)
+
+이 브랜치에 포함된 `vision4iot.fusion.fuse()`와 `message()`를 합성 카메라·레이더 입력으로 호출하여 생성한 출력을 신선도 시험 함수에 전달했다. 카메라 영상, YOLO 추론, 실제 센서 데이터는 아니다. `PYTHONPATH=../../vision/src python3 -B -m unittest -v test_vision_contract test_fused_freshness`: 총 10개 통과. camera_only, confirmed, cam_ok=false 및 3m 밖 ghost 제외를 확인했다. 문서 §10의 3.49m ghost 예시는 현재 코드 기본 3m 기준으로 생성되지 않으므로 형식 예시로만 취급한다.
+
+팀 Pi의 합의된 `AE-VisionAI/fusedTracks/la`에 `Criskengine`으로 읽기 전용 HTTP 조회를 시도했으나 연결 거부됐다. 서버의 실제 상태·데이터 존재 여부·ACP는 결론 낼 수 없다. 공용 서버 설정·리소스는 변경하지 않았다.
+
+추가 연계 시험: `test_mec_fused_observer.py`가 저장소 Vision `fuse()`·`message()`에 합성 카메라 좌표를 입력해 `camera_only`/`raise` 출력을 생성하고, 격리 CSE에 CIN으로 기록했다. MEC에서 찾은 URI로 읽어 형식과 신선도를 점검하고 외부 로컬 `FusedPoller`에 전달한 결과 `WAITING_FOR_NEW_CIN` → `FRESH`를 확인했다. 임시 MEC 등록은 삭제했다. 실제 Vision 실행 프로세스·YOLO·영상·실제 센서·RiskEngine 판정 연동이나 안전 검증은 아니다. 실행하려면 `PYTHONPATH`에 `../../vision/src`와 외부 FusedPoller 사본 경로 모두 지정한다.
