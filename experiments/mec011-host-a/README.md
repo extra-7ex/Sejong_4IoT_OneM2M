@@ -50,3 +50,16 @@ docker compose -p safezone-mec-experiment stop
 - 기존 AdvantEDGE 구현은 Sandbox 경로를 반환하므로 nginx가 `/safezone-a/mep-a/`를 제거해 전달합니다. API 명세 파일 디렉터리 `/api`는 이미지에 포함하지 않아 관련 메타데이터 기능은 미검증입니다.
 
 상류 코드: [AdvantEDGE](https://github.com/InterDigitalInc/AdvantEDGE), Apache-2.0, 위 커밋으로 고정. 이 저장소에는 상류 소스 전체를 포함하지 않습니다.
+
+## MEC011 가용성 알림 시험
+
+별도의 시험 수신기를 추가하고 서비스 상태를 **수동으로** 바꿔 알림을 확인합니다. 먼저 위의 기본 실행·등록을 완료하세요.
+
+```bash
+docker compose -p safezone-mec-experiment -f compose.yaml -f notify-test.compose.yaml up -d
+python test_availability.py
+```
+
+테스트는 임시 SUB를 생성하고 시험 서비스의 INACTIVE와 ACTIVE 상태 변경 알림을 확인한 뒤 ACTIVE로 복구하고 해당 시험 SUB를 삭제합니다. 알림 수신기는 Docker 내부 네트워크 전용입니다. 한 앱 인스턴스가 발행자·구독자 역할을 흉내 내며 실제 RiskEngine은 아닙니다. 이 테스트는 명시적 상태 업데이트를 검증하며 heartbeat 장애 자동 감지·교차 Host 알림은 검증하지 않습니다.
+
+2026-11-15 Windows/Docker 시험: SUB 201, INACTIVE/ACTIVE PUT 200, 두 상태의 `SerAvailabilityNotification` 수신 확인. 복구 후 서비스 발견 및 모의 Vision 응답 확인. 별도로 서버 경로 구현에서 heartbeat 관련 핸들러는 확인하지 못했으며 API 모델의 존재만으로 동작을 단정하지 않습니다.
