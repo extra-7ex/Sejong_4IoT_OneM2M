@@ -11,4 +11,4 @@ curl -s -X DELETE "$CSE/AE-forklift01/alert/sub-alert-node" -H "X-M2M-RI: s1" "$
 # 새 구독 (ty=23): alert에 새 데이터(net 3)가 생기면 ESP8266으로 알림
 curl -s -X POST "$CSE/AE-forklift01/alert" -H "X-M2M-RI: s2" "${H[@]}" \
   -H "Content-Type: application/json;ty=23" \
-  -d "{\"m2m:sub\":{\"rn\":\"sub-alert-node\",\"nu\":[\"http://$ESP/notify\"],\"nct\":1,\"enc\":{\"net\":[3]}}}"; echo
+  -d "{\"m2m:sub\":{\"rn\":\"sub-alert-node\",\"nu\":[\"http://${ESP}:80/notify\"],\"nct\":1,\"enc\":{\"net\":[3]}}}"; echo
