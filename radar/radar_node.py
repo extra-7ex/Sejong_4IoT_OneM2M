@@ -1,38 +1,51 @@
-"""레이더 노드: LD2450(/dev/serial0) → tinyIoT AE-forklift01/radar
+"""LD2450 레이더 업로더: Pi UART로 읽은 표적을 tinyIoT MN의 AE-forklift01/radar에 CIN으로 올린다.
 
-radar CIN의 con (JSON 문자열):
-  표적 있음: {"ts": 1762826978.12, "targets": [{"slot": 0, "x": 373, "y": 366, "v": -8}]}
-  표적 없음: {"ts": 1762826978.12, "targets": []}
-  - ts   : Pi가 프레임을 시리얼에서 다 받아 해석한 시각 (Pi 시스템 시각, 초)
-           센서 측정 시각도, tinyIoT CIN 생성 시각(ct)도 아님
-  - slot : LD2450 프레임 안 표적 자리 번호(0~2), 빈 자리가 있어도 번호를 당기지 않음
-  - x, y : mm / v : cm/s
-  - UPLOAD_INTERVAL마다 전송 시도, 이전 요청이 대기열에 남아 있으면 건너뜀
-  - 레이더/시리얼이 멈추면 프레임이 없으므로 아무것도 보내지 않음 (빈 프레임과 구분됨)
+기본은 oneM2M MQTT 바인딩(onem2m/mqtt.md). TRANSPORT=http로 예전 HTTP 방식도 쓸 수 있다.
+
+표적이 없어도 유효한 레이더 프레임이 들어오면 0.5초 간격으로 빈 targets 업로드를 시도한다.
+
+  python3 radar/radar_node.py                       # MQTT, 같은 Pi의 브로커와 TinyIoT-MN
+  TRANSPORT=http python3 radar/radar_node.py        # HTTP
+  MQTT_HOST=<브로커 IP> python3 radar/radar_node.py  # 브로커가 다른 기기에 있을 때
+
+필요: pyserial, MQTT일 때 paho-mqtt (`sudo apt install python3-serial python3-paho-mqtt`)
 """
 import os, json, math, time, subprocess, threading, queue, itertools
 import serial, urllib.request
 
 PI_IP = subprocess.check_output(['hostname', '-I']).split()[0].decode()
-CSE = os.getenv('CSE_URL', f'http://{PI_IP}:3000/TinyIoT')   # tinyIoT 주소 (자동)
+TRANSPORT = os.getenv('TRANSPORT', 'mqtt').lower()      # mqtt | http
+CSE_NAME = os.getenv('CSE_NAME', 'TinyIoT-MN')          # CSEBase 이름 (docs/cse-naming.md)
+CSE_RI = os.getenv('CSE_RI', 'tinyiot-mn')              # CSE_BASE_RI — MQTT 토픽에 쓰임
+CSE = os.getenv('CSE_URL', f'http://{PI_IP}:3000/{CSE_NAME}')   # HTTP일 때 주소
+MQTT_HOST = os.getenv('MQTT_HOST', '127.0.0.1')
+MQTT_PORT = int(os.getenv('MQTT_PORT', '1883'))
+SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/serial0')
 ORIGIN = 'Cforklift01'
 
-UPLOAD_INTERVAL = 0.5    # radar 업로드 간격(초): 표적 유무와 관계없이 이 간격으로 전송 시도
+UPLOAD_INTERVAL = 0.5    # radar 업로드 최소 간격 (초)
 LOCAL_DECISION = True    # 위험 판단 엔진 완성 전까지 임시로 alert 직접 기록
 WARN_MM = 500            # 경고 거리 (mm)
 OFF_DELAY = 1.5          # 이 시간(초) 동안 계속 범위 밖이어야 해제
 CON_AS_STRING = True     # tinyIoT는 con에 문자열만 받음
-HTTP_TIMEOUT = 5         # tinyIoT 응답이 약 2초 걸려서 넉넉하게
-LOG_UPLOAD = True        # 업로드 응답 시간·간격, 프레임 공백 출력 (진단용)
+HTTP_TIMEOUT = 5         # (HTTP) tinyIoT 응답 대기 시간
+LOG_UPLOAD = True        # 진단용 로그
 
-ser = serial.Serial('/dev/serial0', 256000, timeout=1)
+ser = serial.Serial(SERIAL_PORT, 256000, timeout=1)
 HEAD, TAIL = b'\xAA\xFF\x03\x00', b'\x55\xCC'
 
 def val(b):  # MSB 1 = 양수, 0 = 음수
     v = int.from_bytes(b, 'little')
     return (v & 0x7FFF) if v & 0x8000 else -(v & 0x7FFF)
 
-def post_cin(path, con):  # tinyIoT 컨테이너에 데이터 한 건 기록, 성공하면 True
+if TRANSPORT == 'mqtt':
+    from onem2m_mqtt import OneM2MMqtt
+    mq = OneM2MMqtt(MQTT_HOST, CSE_NAME, CSE_RI, ORIGIN, port=MQTT_PORT)
+
+def post_cin(path, con):  # tinyIoT 컨테이너에 데이터 한 건 기록
+    if TRANSPORT == 'mqtt':
+        mq.create_cin(path, con)          # 보내기만 하고 응답은 백그라운드에서 확인 (실패만 출력)
+        return None  # MQTT 응답은 비동기로 확인
     body = {'m2m:cin': {'con': json.dumps(con) if CON_AS_STRING else con}}
     req = urllib.request.Request(
         f'{CSE}/{path}', method='POST', data=json.dumps(body).encode(),
@@ -60,7 +73,12 @@ def worker():
         _, _, path, con = q.get()
         t0 = time.time()
         ok = post_cin(path, con)
-        if LOG_UPLOAD and path.endswith('/radar'):
+        if LOG_UPLOAD and TRANSPORT == 'mqtt':
+            gap = f'{t0 - last:.2f}s' if last is not None else '-'
+            print(f'{path}: MQTT 요청 시도, 간격 {gap} (응답은 별도 확인)')
+            if path.endswith('/radar'):
+                last = t0
+        elif LOG_UPLOAD and path.endswith('/radar'):
             gap = f'{t0 - last:.2f}s' if last is not None else '-'
             print(f'radar: 표적 {len(con["targets"])}개, 응답 {time.time() - t0:.2f}s, '
                   f'간격 {gap}' + ('' if ok else ' (실패)'))
@@ -74,11 +92,14 @@ def set_alert(level, dist=None):
     print(f'>> alert: {level}' + (f' ({dist}mm)' if dist else ''))
     enqueue('AE-forklift01/alert', {'level': level, 'dist': dist, 'ttc': None}, 0)
 
-print(f'CSE: {CSE}  (radar {UPLOAD_INTERVAL}s 간격, 빈 프레임 포함)')
+if TRANSPORT == 'mqtt':
+    print(f'MQTT {MQTT_HOST}:{MQTT_PORT} → {CSE_NAME} (토픽 /oneM2M/req/{ORIGIN}/{CSE_RI}/json)')
+else:
+    print(f'HTTP → {CSE}')
 buf, last_up, level, last_in, last_slots = bytearray(), 0, 'safe', 0, []
 if LOCAL_DECISION:
     set_alert('safe')                # 시작할 때 안전 상태로 맞춤
-last_frame, nbytes, bad = time.time(), 0, 0   # 프레임 공백 진단용
+last_frame, nbytes, bad = time.time(), 0, 0
 
 while True:
     chunk = ser.read(ser.in_waiting or 1)
