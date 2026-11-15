@@ -112,3 +112,7 @@ python -m unittest engine.test_risk_engine -v
 ```
 
 현재 모의 CIN 단위 테스트 12개가 통과한다. 실제 LD2450 데이터, 실행 중 tinyIoT의 GET/POST, SUB 알림 전달, LED·부저·모터 동작은 이 테스트 범위에 포함되지 않는다.
+
+### 빈 프레임 MQTT 입력 모의 검증
+
+MQTT 콜백·알림 JSON과 모의 events 기록을 사용한 단위 시험에서 표적 DANGER → 0.5초 간격 빈 프레임 수신 시 유예 동안 DANGER 유지 → 빈 프레임 1초 유지 후 SAFE → 새 프레임이 1초 넘게 없으면 UNKNOWN을 확인했다. 이는 실제 브로커, tinyIoT 또는 레이더의 통합 시험이 아니다. 전체 엔진 단위 테스트 23개 통과. 최신 main의 PR #15에는 빈 targets와 slot 전송 코드가 포함되어 있지만 MQTT 업로더 PR #13은 이를 합치는 작업 및 통합 시험이 필요하다. slot이 같은 표적을 유지한다고 잠정 가정하며 실제 슬롯 연속성은 미검증이다.

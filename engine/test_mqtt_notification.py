@@ -2,6 +2,7 @@ import json
 import time
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from engine.config import RiskConfig
 from engine.main import RiskApplication
@@ -70,6 +71,33 @@ class MQTTNotificationTests(unittest.TestCase):
         self.rx.process_next(timeout=0)
         self.assertEqual(self.app.engine.input_fault, "mqtt_notification_queue_overflow")
         self.assertTrue(self.rx.queue.empty())
+
+    def test_empty_frames_hold_danger_then_safe_and_silence_unknown(self):
+        # Fake time and MQTT callback: this verifies application logic, not a broker/CSE.
+        now = [10.0]
+        cse = FakeCSE()
+        app = RiskApplication(cse, RiskEngine(RiskConfig(), clock=lambda: now[0]))
+        rx = MQTTNotifications(app, "127.0.0.1", 1883, "/test")
+
+        def send(ri, targets):
+            body = {"m2m:sgn": {"nev": {"rep": {"m2m:cin": {
+                "ri": ri, "con": json.dumps({"ts": 1, "targets": targets})
+            }}}}}
+            rx.on_message(None, None, SimpleNamespace(payload=json.dumps(body).encode(), retain=False))
+            rx.process_next(timeout=0)
+            return app.engine.last_decision
+
+        with patch("engine.mqtt_notification.time.monotonic", side_effect=lambda: now[0]):
+            self.assertEqual(send("a", [{"slot": 0, "x": 1000, "y": 0}])["status"], "DANGER")
+            now[0] = 10.5
+            self.assertEqual(send("b", [])["status"], "DANGER")
+            now[0] = 11.0
+            self.assertEqual(send("c", [])["status"], "DANGER")
+            now[0] = 11.5
+            self.assertEqual(send("d", [])["status"], "SAFE")
+            now[0] = 12.51
+            self.assertEqual(app.tick()["status"], "UNKNOWN")
+        self.assertEqual([event["status"] for event in cse.events], ["DANGER", "SAFE", "UNKNOWN"])
 
 
 if __name__ == "__main__":
