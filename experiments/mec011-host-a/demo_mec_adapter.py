@@ -119,11 +119,15 @@ def identifier(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ae", required=True, type=identifier)
+    parser.add_argument("--pi-mn", action="store_true", help="Use the Pi MN-CSE for isolated test resources")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init")
     for command in ("request", "run"):
         commands.add_parser(command).add_argument("request_id", type=identifier)
     args = parser.parse_args()
+    global CSE
+    if args.pi_mn:
+        CSE = "http://127.0.0.1:3000/TinyIoT-MN"
     ae_url = f"{CSE}/{args.ae}"
     requests = f"{ae_url}/requests"
     results = f"{ae_url}/results"

@@ -120,6 +120,20 @@ python -B .\demo_mec_adapter.py --ae $demoAe run vision-demo-001
 
 
 
+## Pi ARM64 및 MN-CSE 연동 시험 (2026-11-17)
+
+Raspberry Pi 4의 Debian 13 `linux/arm64`에서 격리 MEC 구성요소를 실행했다. 랩탑에서 고정 상류 커밋 `8f6edbeaf3674b6a667ce3bc1dbef3a7fccbe2b9`를 ARM64로 교차 빌드하고 이미지를 Pi에 옮겼다. Pi의 직접 빌드는 저장장치 부하와 SSH 지연으로 중단했다.
+
+모의 Vision에 대해 앱 준비 204, 등록 201, 발견 200 ACTIVE, 발견된 주소의 HTTP 호출 200을 확인했다. 모의 Vision을 중지했을 때 등록은 ACTIVE로 남고 호출은 실패했으며, 재시작 후 HTTP 200으로 복구했다. 기존 MN·IN의 CSEBase 조회는 각 HTTP 200이었다.
+
+Pi의 실제 MN-CSE `TinyIoT-MN`에 별도 시험 AE와 `requests`, `results` CNT를 만들어 다음 흐름을 확인했다.
+
+```text
+요청 CIN → 수동으로 한 번 실행한 연동 AE → MEC011 발견 → 모의 Vision HTTP 호출 → 결과 CIN 생성·재조회
+```
+
+예시 결과는 `request_id=pi-vision-001`, `registry_state=ACTIVE`, `call_status=ok`, `http_status=200`, `track_count=1`이다. 시험 리소스는 `AE-mec-demo-6ff0d8d2` 아래에 남겨 두었다. CSE 작업에는 CAdmin을 사용했으므로 운영 AE의 ACP는 검증하지 않았다. `--pi-mn`은 Pi 로컬의 MN 주소를 선택하고, 각각 고유한 시험 AE와 요청 ID를 사용한다. 자동 요청 수신, 실제 Vision과 RiskEngine 연동, 재부팅 후 복구는 별도 검증이다. 모의 서비스에는 `ts`와 `cam_ok`가 없어 신선도 결과는 unknown이다.
+
 ## 기존 Vision 관찰 코드와 MEC 발견 연결 실험
 
 `test_mec_fused_observer.py`는 외부 작업 사본 `engine.fused_tracks.FusedPoller`를 시험 전용 어댑터로 호출한다. 이 PR에 해당 엔진 사본은 포함되지 않으므로 현재 독립 재현은 불가능하며 별도로 사본 경로를 `PYTHONPATH`로 지정해야 한다. Git 관리가 없는 로컬 사본을 사용했으며 GitHub 동일 버전 여부는 미확인이다. GitHub Draft PR #14는 MQTT 변경만 포함하고 Vision 조회를 포함하지 않는다.
