@@ -147,3 +147,17 @@ Pi의 실제 MN-CSE `TinyIoT-MN`에 별도 시험 AE와 `requests`, `results` CN
 팀 Pi의 합의된 `AE-VisionAI/fusedTracks/la`에 `Criskengine`으로 읽기 전용 HTTP 조회를 시도했으나 연결 거부됐다. 서버의 실제 상태·데이터 존재 여부·ACP는 결론 낼 수 없다. 공용 서버 설정·리소스는 변경하지 않았다.
 
 추가 연계 시험: `test_mec_fused_observer.py`가 저장소 Vision `fuse()`·`message()`에 합성 카메라 좌표를 입력해 `camera_only`/`raise` 출력을 생성하고, 격리 CSE에 CIN으로 기록했다. MEC에서 찾은 URI로 읽어 형식과 신선도를 점검하고 외부 로컬 `FusedPoller`에 전달한 결과 `WAITING_FOR_NEW_CIN` → `FRESH`를 확인했다. 임시 MEC 등록은 삭제했다. 실제 Vision 실행 프로세스·YOLO·영상·실제 센서·RiskEngine 판정 연동이나 안전 검증은 아니다. 실행하려면 `PYTHONPATH`에 `../../vision/src`와 외부 FusedPoller 사본 경로 모두 지정한다.
+
+## 연동 AE 자동 요청 처리 시험 (2026-11-17)
+
+`mec_adapter_daemon.py`는 MQTT 알림을 받고 요청 CIN을 다시 읽어 모의 Vision 호출 결과를 기록한다. 시작과 실행 중 주기적으로 requests CNT를 조회해 누락된 요청을 확인한다. 기존 예제의 `init`으로 AE와 CNT를 만든 뒤 요청 CNT에 `nu=mqtt://127.0.0.1:1883/<고유 수신자>/json`, `enc.net=[3]`, `nct=1`인 SUB를 별도 생성한다.
+
+```bash
+python3 mec_adapter_daemon.py --pi-mn --ae AE-mec-auto-TEST --topic /oneM2M/req/tinyiot-mn/CmecAutoTEST/json
+```
+
+별도 터미널에서 기존 `demo_mec_adapter.py`의 `request` 명령으로 고유 요청을 생성한다. 결과는 `results/res-<request_id>`에서 조회한다. 한 시험 AE에 한 프로세스만 실행하며 CAdmin은 시험 전용이다.
+
+Pi MN-CSE의 별도 AE `AE-mec-auto-91e5e5ce`에서 알림으로 요청을 받고 모의 Vision 호출 결과 CIN을 확인했다. 수동 중단 중 만든 요청도 재시작 후 CNT 스캔으로 처리했다. 시험 요청 생성 응답 한 건은 timeout이었으나 동일 CIN 조회로 저장을 확인했다. 시험 프로세스는 종료했으며 시험 AE·CNT·SUB 및 CIN은 확인을 위해 남겼다.
+
+기존 요청·결과는 CNT의 mni=20 제한 안에서만 재확인할 수 있다. 결과 CIN이 삭제되면 같은 ID가 다시 호출될 수 있다. 동시에 여러 인스턴스를 실행하거나 임의의 외부 부작용을 갖는 서비스를 처리하도록 설계하지 않았다. 결과 저장의 응답이 불확실하면 다음 스캔에서 결과를 확인한다. SUB 검증 요청의 표준 응답, 운영 권한, 인증, 실제 Vision, 장치 재부팅 시 자동 시작은 미검증이다.
