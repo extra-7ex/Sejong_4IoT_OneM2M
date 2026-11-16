@@ -95,6 +95,31 @@ python3 test_cse_discovery.py
 
 모의 시험 6개 PASS. 별도 CSE 조회 연계 시험에서 FRESHNESS OK 확인. 기존 시험을 두 번째로 실행하면 AE originator 중복으로 HTTP 403이 발생해 시험마다 고유 originator를 쓰도록 수정했고, 이후 연속 두 번 성공했다. CAdmin의 시험용 읽기·쓰기 권한은 실제 ACP 검증이 아니다. 시험 CSE 안에 모의 리소스가 누적된다.
 
+## oneM2M 요청에서 시작하는 모의 Vision 호출 시연 (2026-11-16)
+
+이 시연은 Windows 랩탑의 `linux/amd64` Docker 시험 환경을 사용한다. 위 절차대로 모의 Vision을 MEC011에 등록하고, 격리 tinyIoT 컨테이너를 시작한다. 로컬 주소는 시험 CSE `127.0.0.1:13000/TinyIoT`, MEC 플랫폼 `127.0.0.1:18080`, 모의 Vision `127.0.0.1:18081`이다. 이미 등록된 서비스가 있으면 같은 이름으로 추가 등록하지 않는다.
+
+이 디렉터리에서 PowerShell로 실행한다.
+
+```powershell
+$demoAe = 'AE-mec-adapter-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+python -B .\demo_mec_adapter.py --ae $demoAe init
+python -B .\demo_mec_adapter.py --ae $demoAe request vision-demo-001
+python -B .\demo_mec_adapter.py --ae $demoAe run vision-demo-001
+```
+
+1. `init`은 시험용 AE 아래에 `requests`와 `results` CNT를 만든다.
+2. `request`는 `request_id`와 `operation: get_latest_vision`을 담은 요청 CIN을 만든다.
+3. `run`은 요청 CIN을 읽고 MEC011에서 `safezone-mock-vision`의 주소를 발견한 뒤 HTTP GET으로 호출한다. 같은 `request_id`를 남긴 결과 CIN을 생성하고, CSE에서 다시 읽어 출력한다.
+
+확인한 결과는 발견 상태 `ACTIVE`, Vision HTTP `200`, 모의 표적 1개다. 모의 응답에는 `ts`와 `cam_ok`가 없어 `frame_ts`와 `cam_ok`는 `null`, `freshness`는 `unknown`이다. 같은 ID를 순서대로 다시 실행하면 저장된 결과 CIN을 읽는다. 추가 호출을 시연하려면 새 요청 ID를 사용한다. 요청 및 결과 CIN은 조회할 수 있도록 격리 CSE에 남긴다.
+
+모의 Vision만 중단한 후 새 요청을 처리하면 `registry_state: ACTIVE`, `call_status: call_failed`, `http_status: null`이 기록된다. 컨테이너를 다시 시작한 후 또 다른 요청으로 HTTP 200과 결과 CIN 저장을 확인했다.
+
+이 스크립트는 명령으로 요청을 한 건씩 처리한다. `CAdmin`은 격리 CSE 시험용이다. 팀 CSE의 ACP, 자동 요청 수신, 실제 Vision 센서 데이터, RiskEngine, Pi ARM64 배포는 별도로 검증한다.
+
+
+
 ## 기존 Vision 관찰 코드와 MEC 발견 연결 실험
 
 `test_mec_fused_observer.py`는 외부 작업 사본 `engine.fused_tracks.FusedPoller`를 시험 전용 어댑터로 호출한다. 이 PR에 해당 엔진 사본은 포함되지 않으므로 현재 독립 재현은 불가능하며 별도로 사본 경로를 `PYTHONPATH`로 지정해야 한다. Git 관리가 없는 로컬 사본을 사용했으며 GitHub 동일 버전 여부는 미확인이다. GitHub Draft PR #14는 MQTT 변경만 포함하고 Vision 조회를 포함하지 않는다.
