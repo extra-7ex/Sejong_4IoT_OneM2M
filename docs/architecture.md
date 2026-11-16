@@ -2,9 +2,9 @@
 
 ## 문서 범위
 
-팀 공유 정보, GitHub 코드와 별도 시험 결과를 정리한다. 목표 구성과 관제 경로는 2026-11-16에 다시 대조했다. **현재 프로토타입**, **코드·모의 시험**, **미검증 목표**는 서로 다르다. 각 시험의 서버·DB와 데이터 출처를 확인하고, 단일 시험 결과로 실제 장비 전체 연동이나 산업안전 성능을 주장하지 않는다.
+팀 공유 정보, GitHub 코드와 별도 시험 결과를 정리한다. 목표 구성, 관제 경로와 아래 통합 기록을 2026-11-16에 다시 대조했다. **현재 프로토타입**, **코드·모의 시험**, **미검증 목표**는 서로 다르다. 각 시험의 서버·DB와 데이터 출처를 확인하고, 단일 시험 결과로 실제 장비 전체 연동이나 산업안전 성능을 주장하지 않는다.
 
-- 저장소 기준: 기존 RiskEngine MVP와 Vision 코드; MQTT 수신·발행 엔진 시험은 별도 작업본이며 `main`에 반영되지 않았다.
+- 저장소 기준: 기존 RiskEngine MVP와 Vision 코드; RiskEngine의 MQTT 수신·events 발행은 [Draft PR #14](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/pull/14)에 있으며 `main`에 반영되지 않았다.
 - 현태의 설명: LD2450은 Pi UART에 직접 연결되어 있으며 ESP8266은 레이더와 직접 연결하지 않고 tinyIoT의 HTTP 알림을 받는다. 장비별 현재 펌웨어·동작은 재확인이 필요하다.
 - 광민의 보고: Pi MN과 노트북 IN의 연결 시험 성공. 다른 시험에서는 Pi 내부 IN도 사용했다. CSE 등록과 `events`의 IN 전달은 별도 검증이다.
 - [Vision PR #9](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/pull/9): 실제 radar CIN 예시를 Vision이 읽었고, MQTT·HTTP 입력/출력과 녹화 영상으로 시험했다고 보고했다. PR은 작성 당시 열린 상태였으며 해당 보고의 전체 재현 여부는 별도 기록한다.
@@ -17,14 +17,14 @@
 flowchart LR
   LD["LD2450 레이더"] -- "UART 프레임<br/>256000 bps, 팀 설명" --> UP["Pi 레이더 업로더"]
   UP -. "radar CIN 생성<br/>실행 버전·방식 확인 필요" .-> RAD["tinyIoT MN-CSE<br/>radar CNT"]
-  RAD -. "조회·알림<br/>모의 입력 시험" .-> ENGINE["RiskEngine<br/>거리 · 2D CPA"]
+  RAD -. "HTTP 조회 · MQTT 알림은 PR #14 격리 시험" .-> ENGINE["RiskEngine<br/>거리 · 2D CPA"]
   ENGINE -. "events CIN<br/>모의 입력 시험" .-> EVENT["events CNT"]
   CAM["카메라"] -. "녹화 영상 시험<br/>C270 실시간 미검증" .-> VISION["Vision AI"]
   RAD -. "HTTP polling<br/>코드 및 시험 보고" .-> VISION
   VISION -. "fusedTracks CIN<br/>시험 보고" .-> FUSED["fusedTracks CNT"]
   FUSED -. "모의 CIN 관찰<br/>별도 작업본" .-> ENGINE
-  ALERT["alert CNT"] -. "HTTP SUB 알림<br/>실제 전체 연결 미검증" .-> ESP["ESP8266 경고 장치"]
-  ENGINE -. "alert 작성 미구현" .-> ALERT
+  UP -. "LOCAL_DECISION 임시 alert 기록<br/>실행 버전 확인 필요" .-> ALERT["alert CNT"]
+  ALERT -. "HTTP 또는 MQTT SUB 알림<br/>단말 통합 미검증" .-> ESP["ESP8266 경고 장치"]
   CSE["MN-CSE"] -. "등록 시험 보고<br/>데이터 전달 미검증" .-> IN["IN-CSE"]
 ```
 
@@ -97,7 +97,7 @@ IN을 데이터 원본으로 쓰려면 선택한 전달 방식과 각 활성 조
 
 [PR #16](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/pull/16)의 격리 환경에서는 모의 Vision의 등록·발견·호출을 시험했다. 모의 서비스를 멈췄을 때 호출은 실패했지만 등록부에 ACTIVE가 남았다. 실제 장비에서 장애 감지 주체와 상태 전달 방식이 정해지면, 장애 감지 → 상태 기록 → 판정 전환을 별도 호출 흐름으로 기록한다.
 
-이번 시연의 MQTT 호출 흐름은 아래의 격리 시험 범위다. 여러 지게차 MN과 작업자 AE가 연결되는 구성은 확장 시나리오이며, 작업자와 레이더 표적의 매핑은 미정이다.
+아래 MQTT 호출 흐름은 PR #14의 격리 시험에서 확인한 범위다. 여러 지게차 MN과 작업자 AE가 연결되는 구성은 확장 시나리오이며, 작업자와 레이더 표적의 매핑은 미정이다.
 
 ### MQTT 통합 시험의 흐름
 
@@ -125,22 +125,21 @@ sequenceDiagram
 
 시험에는 RiskEngine MQTT 입력·출력 작업본, 별도 CSE ID·포트·DB 및 실험용 리소스를 사용했다. 사용한 tinyIoT는 SUB 검증 알림에 수신 애플리케이션 응답이 없는데도 SUB를 생성했다. **검증 응답 구현과 다른 tinyIoT 버전의 호환성은 미확인**이다.
 
-### 현재 HTTP 입력과 장치 경로
+### RiskEngine MVP의 HTTP 입출력
 
 ```mermaid
 sequenceDiagram
   participant C as MN-CSE
   participant R as GitHub RiskEngine MVP
-  participant E as ESP8266
   R->>C: HTTP GET radar/la (polling)
   C-->>R: CIN 또는 오류
   R->>R: 거리 · CPA 또는 UNKNOWN
   R->>C: 상태 변경 시 HTTP POST events CIN
-  Note over R,C: 별도 alert CIN 작성은 미구현
-  C-->>E: alert의 HTTP SUB 알림 (코드 존재)
-  E-->>C: HTTP 응답 (파싱 전)
-  Note over E: 응답은 실제 LED·부저 수행 확인이 아님
 ```
+
+### 별도 장치 경보 경로
+
+`main`의 레이더 업로더는 `LOCAL_DECISION=True`일 때 `AE-forklift01/alert`에 임시 경보를 기록한다. RiskEngine MVP의 출력은 `events`다. MN-CSE가 alert 구독을 통해 작업자 단말로 보내는 HTTP·MQTT 수신 코드와 SUB 스크립트가 있다. 실제 설치 펌웨어, 구독 설정, CIN 수신 및 LED·부저 동작을 각각 확인한다. HTTP 구현은 파싱 전에 응답을 보내므로 LED와 부저는 장치에서 별도로 확인한다.
 
 ## 리소스와 책임
 
@@ -159,7 +158,7 @@ sequenceDiagram
    └─ detect      [CNT]                   # 기존 구상; Vision 경로와 역할 확인
 ```
 
-`radar`에는 대상이 최대 3개인 CIN을 저장한다. 별도의 `events`와 `alert`를 사용하는 방향을 논의했으나, 기존 RiskEngine MVP는 `events`를 작성하고 별도 `alert`는 작성하지 않는다. Pi 레이더 업로더의 한 확인본에는 `LOCAL_DECISION=True`로 `alert`를 작성하는 임시 코드가 있었다. 실제 실행 버전과 작성 주체 전환은 현태·엔진 담당자가 확인한다.
+`radar`에는 대상이 최대 3개인 CIN을 저장한다. 별도의 `events`와 `alert`를 사용하는 방향을 논의했으나, 기존 RiskEngine MVP는 `events`를 작성하고 별도 `alert`는 작성하지 않는다. 현재 `main`의 레이더 업로더는 `LOCAL_DECISION=True`가 기본이다. RiskEngine의 목표 경보 경로는 별도 시험 CNT에서 기록과 단말 수신을 확인한 뒤 전환하며, 운영 alert CNT의 작성자는 한 번에 하나로 유지한다.
 
 Vision은 `AE-VisionAI/fusedTracks`에 결과를 기록하는 코드가 있다. RiskEngine이 Vision을 위험 등급에 반영하는 규칙은 미결정이며, 별도 작업본의 fusedTracks polling은 관찰용이다. Vision의 `ghost_suspect`를 사람 부재의 확정으로 취급하지 않는다.
 
@@ -168,12 +167,14 @@ Vision은 `AE-VisionAI/fusedTracks`에 결과를 기록하는 코드가 있다. 
 | 구간 | 확인된 내용 | 남은 확인 |
 |---|---|---|
 | LD2450 → Pi | UART 직접 연결은 현태의 설명. 실제 현장 전체 연결 시험으로 확대 해석하지 않는다. | 실제 배선·작동 중 업로더 버전·CIN 연속 기록 |
-| radar → MN | MQTT 요청으로 CIN을 만들고 HTTP로 조회한 Pi 시험을 광민이 보고했다. 실제 ESP MQTT 발행은 미시험. | 실제 업로더의 전송 방식과 응답·빈 프레임·전송 주기 |
+| radar → MN | `main`의 Pi 업로더는 기본 MQTT로 발행하며 유효한 빈 프레임도 업로드를 시도한다. MQTT 생성·HTTP 조회의 Pi 시험은 팀 보고다. | 실제 설치 버전, MQTT 응답, 빈 CIN 도착과 전송 주기 |
 | radar → RiskEngine → events | 모의 CIN, 독립 MN에서 HTTP polling 및 events 생성·조회 확인. | 실제 radar·현재 팀 MN에서 재시험; 시작 시 오래된 la 처리 |
-| MQTT notification → RiskEngine → events | 별도 시험 서버에서 SUB 검증 알림과 CIN 알림을 수신하고, 모의 CIN → MQTT notification → 위험 판단 → MQTT events 요청·rqi/rsc 및 CIN 조회를 확인했다. | 별도 엔진 작업본이며 `main` 미반영. 실제 MN·센서, 알림 검증 응답과 접근 권한을 확인한다. |
+| MQTT notification → RiskEngine → events | 별도 시험 서버에서 SUB 검증 알림과 CIN 알림을 수신하고, 모의 CIN → MQTT notification → 위험 판단 → MQTT events 요청·rqi/rsc 및 CIN 조회를 확인했다. | Draft PR #14이며 `main` 미반영. 실제 MN·센서, 알림 검증 응답과 접근 권한을 확인한다. |
 | Vision | PR #9가 녹화 영상 기반 Vision 실행, 실제 radar CIN 예시 해석 및 MQTT/HTTP 접근 시험을 보고했다. RiskEngine 측은 모의 fusedTracks를 별도 시험 CNT에서 polling해 관찰했다. | C270 실시간 출력 → 실제 fusedTracks → RiskEngine 조회; 스키마·표적 연관·조언 반영 |
 | MN ↔ IN | Pi MN과 노트북 IN의 CSE 연결 성공이 보고됐다. 별도 Pi 내부 IN 시험도 보고됐다. | 어떤 서버·이름·ID인지와 등록, 원격 조회, 실제 `events` 전달을 각각 검증 |
-| alert → ESP | HTTP `/notify` 수신 코드와 구독 생성 스크립트가 있다. | 현재 장치·SUB/nu·실제 CIN 수신·LED/부저/모터 동작. 엔진 alert 발행은 별도 작업 |
+| MN/IN → 관제 | 대시보드는 기본 MN 최신 CIN 조회와 선택적 IN 접속 확인을 구현한다. 가짜 CSE 기반 단위 테스트 4개를 확인했다. | 실제 Pi 데이터 조회, IN을 통한 관제 데이터 조회 |
+| MEC 서비스 발견 및 가용성 | PR #16에서 모의 Vision 등록·발견·호출을 시험했다. 중단 후 등록 상태는 ACTIVE로 남았다. | 실제 레이더·Vision의 장애 감지, 상태 CIN 기록과 판정 전환 |
+| alert → ESP | HTTP `/notify`와 MQTT 수신 구현 및 SUB 스크립트가 있다. 일부 HTTP 작업자 코드에는 AE 등록도 있다. | 설치 펌웨어·SUB/nu·실제 CIN 수신과 LED·부저 동작. RiskEngine의 alert 기록은 별도 검증 |
 
 상희의 MQTT 시험 보고는 RAM에 둔 DB 복사본에서 330건 중 325건의 생성 성공 응답을 확인했다. 5건의 실패 또는 응답 누락 원인은 미확인이다. 같은 보고의 SD카드 DB 약 1.6초/건은 별도 환경의 관찰이며 일반적인 지연 또는 성능 보장값이 아니다. 1초 데이터 만료 기준과 실제 CIN 수신 간격은 재측정이 필요하다.
 
@@ -183,7 +184,7 @@ Vision은 `AE-VisionAI/fusedTracks`에 결과를 기록하는 코드가 있다. 
 - Vision의 fusedTracks x·y·`dist_m`은 m, `ttc_s`는 초라는 현재 코드 가정이다. 실제 설치 시 센서의 원점·축 방향·보정과 시간 기준을 확인한다.
 - RiskEngine은 현재 거리와 같은 표적으로 연결한 연속 좌표의 변화로 상대속도·2D CPA를 계산한다. `t_cpa`는 최근접 시각이지 위험 반경에 처음 들어가는 시각이 아니며, 현재 속도 유지 조건의 예측이다. Vision의 거리/접근속도 `ttc_s`와 동일시하지 않는다.
 - 위험 반경·거리·시간 임계값은 시험 가설이다. 센서 오차, 회전하는 레이더 좌표계, 센서 설치 오프셋 및 지게차 실제 크기는 추가 검토가 필요하다.
-- 기존 GitHub MVP는 시작 시 오래된 `radar/la`를 새 입력으로 받아들일 수 있다. 별도 엔진 작업본은 첫 CIN을 기준점으로 기억하고 다음 CIN을 기다린다. 실제 업로더가 표적이 없을 때 빈 CIN을 보내지 않으면 UNKNOWN이 지속될 수 있다. 실제 전송 여부와 정책을 확인한다.
+- 기존 GitHub MVP는 시작 시 오래된 `radar/la`를 새 입력으로 받아들일 수 있다. 별도 엔진 작업본은 첫 CIN을 기준점으로 기억하고 다음 CIN을 기다린다. 현재 Pi 업로더는 유효한 빈 프레임도 전송을 시도한다. 실제 MN에 빈 CIN이 계속 도착하는지, 프레임 중단 시 UNKNOWN으로 전환하는지 확인한다.
 
 ## 실패와 장애 처리
 
@@ -193,7 +194,8 @@ Vision은 `AE-VisionAI/fusedTracks`에 결과를 기록하는 코드가 있다. 
 | MN → IN 연결 실패 | 기존 MN 코드에는 시작 시 IN 등록 실패로 부팅이 중단되는 경로가 있다. IN 장애 중 MEC 로컬 기능 유지와 재연결은 팀 논의 중이다. 독립 시험에서는 등록을 생략했으므로 이 정책을 검증하지 않았다. |
 | 통지 확인·재전송 | MQTT 시험 tinyIoT는 직접 `m2m:sgn` 형태의 검증 알림을 발행했고 별도 수신 응답 없이 SUB를 생성했다. 표준적인 검증 응답 처리, 중복·유실·재연결은 추가 검증이 필요하다. |
 | 이벤트 저장 지연·timeout | 응답 timeout 뒤에도 CIN이 생성된 사례가 있다. 중복 방지와 저장 여부 확인, 재처리 정책이 필요하다. |
-| RiskEngine·Pi·Wi-Fi 장애 | 엔진이 멈추면 UNKNOWN을 전송할 수 없다. 장치 측 무신호 동작, 별도 인터락, 통신 복구 및 재가동은 미확정이다. |
+| MEC 서비스 장애 | 등록 상태와 실제 API 응답·입력 신선도를 각각 확인한다. Vision 중단 시 신선한 레이더로 판단을 유지하는 목표 동작과 상태 전달은 실장비 미검증이다. |
+| RiskEngine·Pi·Wi-Fi 장애 | 엔진이 멈추면 새 판정을 기록할 수 없다. 장치 측 무신호 동작, 별도 인터락, 통신 복구 및 재가동은 미확정이다. |
 
 `LOCAL_DECISION`은 레이더 노드의 임시 alert 작성 로직이며, 네트워크에 의존하지 않는 직접 모터 정지 인터락의 구현·검증 근거가 아니다. 기존 ESP 펌웨어의 `warn`/`danger` 이외 표시 및 부팅 시 LED 동작도 합의된 안전 정책이 아니다.
 
