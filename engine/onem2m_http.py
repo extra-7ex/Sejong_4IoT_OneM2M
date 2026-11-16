@@ -33,13 +33,16 @@ class OneM2MHTTP:
             return exc.code, dict(exc.headers.items()), exc.read()
 
     def get_latest_radar_cin(self) -> tuple[dict, bytes]:
-        status, headers, body = self._request("GET", self.config["radar_path"])
+        return self.get_latest_cin(self.config["radar_path"])
+
+    def get_latest_cin(self, path: str) -> tuple[dict, bytes]:
+        status, headers, body = self._request("GET", path)
         if not 200 <= status < 300:
-            raise RuntimeError(f"radar GET failed: HTTP {status}: {body[:300]!r}")
+            raise RuntimeError(f"CIN GET failed for {path}: HTTP {status}: {body[:300]!r}")
         try:
             return json.loads(body.decode("utf-8")), body
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RuntimeError("radar GET did not return JSON") from exc
+            raise RuntimeError(f"CIN GET for {path} did not return JSON") from exc
 
     def create_event_cin(self, event: dict) -> dict:
         # con is intentionally a JSON string, matching alert_node.ino which accepts

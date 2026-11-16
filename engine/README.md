@@ -1,5 +1,23 @@
 # SafeZone 위험판단 엔진 MVP
-## MQTT 알림 입출력 — 독립 시험용
+## MQTT 알림 입출력 — Pi 격리 시험 확인
+
+### Vision 조언과 작업자 alert 시험
+
+`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다. 주기 타이머 폴링이 아니라 SAFE 레이더 입력에 따른 조회다. producer `ts`가 현재 시각 기준 3초 이내이고 `cam_ok=true`인 결과에서 `camera_only` 표적에 `advice="raise"`가 있으면 최종 판정을 `WARNING`으로 올린다. Vision 입력이 없거나 오래됐거나 유효하지 않으면 레이더 판정을 유지한다. `DANGER`와 기존 `WARNING`은 Vision 조언으로 낮추지 않는다. 임계값은 `VISION_MAX_AGE_S`와 `VISION_FUTURE_SKEW_S`로 조정한다. 시계가 동기화됐다는 가정이 필요하다.
+
+`--mqtt-events`와 `--mqtt-alert-path /AE-worker01/alert-test`를 함께 지정하면 미리 만든 단일 시험 작업자 CNT에 상태 변경 시 `level`, `dist`(mm), `ttc`(null)를 기록한다. alert 발행은 기본적으로 꺼져 있다. events와 alert는 각자 응답과 불확실 상태를 추적한다. 같은 상태의 결과가 불확실하면 자동 재전송하지 않는다.
+
+핵심 확인사항: 시험용 작업자 한 명의 경로를 명시한다. 이 시험은 그 한 작업자에게 전체 위험 상태를 전달하는 임시 전제를 쓴다. 레이더 표적과 작업자 ESP의 매핑은 미정이므로 실제 작업자에게 경보를 보내는 구성으로 간주하지 않는다. 현재 worker_node는 `unknown`을 무음으로 처리한다. 실제 수신과 부저를 검증할 때까지 기존 `LOCAL_DECISION`을 유지하고 운영 CNT의 작성자는 한 번에 하나로 둔다. 단말이 구독하는 경로와 시험 CNT는 일치해야 한다. 시험 ACP는 Pi에서 확인했지만 운영 ACP, 재접속 시 상태 동기화와 실제 장비 연동은 미검증이다.
+
+### Pi ARM64 통합 시험 결과 (2026-11-17)
+
+Pi의 `TinyIoT-MN`과 Mosquitto에서 운영 리소스와 분리된 시험 CNT를 사용했다. 레이더 CIN은 MQTT 요청으로 만든 모의 데이터였고, RiskEngine은 radar SUB 알림을 MQTT로 받았다. `events`와 `alert` CIN은 MQTT 요청으로 생성했으며, oneM2M 성공 응답 `rsc=2001`과 시험 리소스 조회를 확인했다. 별도 MQTT 관찰 구독은 alert 알림 5건을 받았다. 실제 ESP8266이나 부저를 사용한 것은 아니다.
+
+Vision도 실제 VisionAI 출력이 아니라 모의 `fusedTracks` CIN으로 시험했다. 시험 전용 ACP를 통해 `Criskengine`이 이 CNT를 읽었고, 테스트 CIN은 HTTP로 생성했다. 신선한 `camera_only + raise`는 Radar SAFE를 WARNING으로 올렸으며 raise가 없는 신선한 결과에서는 SAFE를 유지했다. 별도 연속 프레임으로 CPA WARNING(`t_cpa_s=2.5936`, `d_cpa_m=0`)과 DANGER(`t_cpa_s=0.9113`, `d_cpa_m=0`), 입력 만료 후 UNKNOWN을 확인했다. 한 첫 실행은 샘플 간격이 맞지 않아 WARNING만 확인했고, 간격을 제어해 재시험한 결과 DANGER를 확인했다.
+
+alert CIN은 기존 호환 형식인 `level`, `dist`(mm), `ttc`(null)를 쓴다. CPA 값은 `events`의 `t_cpa_s`와 `d_cpa_m`에서 확인한다. 실제 LD2450 업로더 입력, VisionAI의 실제 fusedTracks 생성, 운영 ACP, 작업자 ESP 수신, LED·부저, 재접속 후 상태 동기화는 검증하지 않았다. 실제 수신·부저 검증 전까지 기존 `LOCAL_DECISION`을 유지하고 운영 CNT의 작성자는 한 번에 하나로 둔다.
+
+시험 call flow는 레이더 CIN notification → 거리·CPA 판정 → (레이더 SAFE일 때) fusedTracks HTTP GET → events/alert MQTT CIN 생성 → 시험 구독자의 MQTT alert 알림이다. 이는 실제 장치 경보를 확인한 결과가 아니다.
 
 `--transport mqtt-notification`은 paho-mqtt 2.x와 정확한 `--mqtt-topic`을 요구한다. 현재 구현은 관찰된 tinyIoT의 직접 `m2m:sgn` JSON을 읽고 기존 radar 판정에 전달한다. SUB 리소스는 자동 생성하지 않으며, CSE의 SUB 및 브로커 토픽은 별도로 구성해야 한다. 실험 환경에서 `nu=mqtt://127.0.0.1:1883/CsafezoneNotify/json`은 `/oneM2M/req/safezone-mqtt-test/CsafezoneNotify/json`에 직접 `m2m:sgn`을 생성했다. 이는 해당 시험용 tinyIoT 버전의 동작이며 다른 버전도 같다고 단정하지 않는다.
 
@@ -7,7 +25,7 @@
 
 브로커가 끊어지면 UNKNOWN을 기록하고 재연결·재구독을 시도한다. 반복 CIN ri는 중복 판정하지 않으며 retained 및 오래 대기한 메시지를 거부한다. 수신 시각은 엔진 수신 monotonic 기준이며, 네트워크에서 오래 지연된 메시지를 모두 식별한다고 보장하지 않는다. 시험용 stale 값은 실제 속도 측정 후 결정해야 한다.
 
-실제 시험 CSE의 구독 검증 메시지는 rqi 없는 직접 `m2m:sgn`이었고 CSE는 앱 응답 없이 SUB를 생성했다. 본 어댑터는 이 검증 알림을 기록만 하며, 표준 oneM2M 검증 응답을 보내지 않는다. SUB 검증 응답·MQTT 접근 인증·TLS·timeout 후 저장 여부 확인 및 재처리 정책은 미구현/미검증이다. 실제 장치의 alert 제어에는 사용하지 않는다.
+실제 시험 CSE의 구독 검증 메시지는 rqi 없는 직접 `m2m:sgn`이었고 CSE는 앱 응답 없이 SUB를 생성했다. 본 어댑터는 이 검증 알림을 기록만 하며, 표준 oneM2M 검증 응답을 보내지 않는다. SUB 검증 응답·MQTT 접근 인증·TLS·timeout 후 저장 여부 확인 및 재처리 정책은 미구현/미검증이다.
 
 ```bash
 python -m pip install -r engine/requirements-mqtt.txt

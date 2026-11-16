@@ -13,6 +13,8 @@ from .config import RiskConfig, one_m2m_config
 from .onem2m_http import OneM2MHTTP
 from .risk_engine import InputError, RiskEngine, normalize_radar_cin
 from .mqtt_events import UncertainWriteError
+from .vision_advice import assess as assess_vision
+from .vision_advice import apply_radar_advice
 
 
 LOG = logging.getLogger("safezone-riskengine")
@@ -20,13 +22,21 @@ LOG = logging.getLogger("safezone-riskengine")
 
 class RiskApplication:
     """Shared pipeline used by both polling and oneM2M notification transports."""
-    def __init__(self, cse: OneM2MHTTP, engine: RiskEngine, event_writer=None):
+    def __init__(self, cse: OneM2MHTTP, engine: RiskEngine, event_writer=None, alert_writer=None,
+                 vision_path: str = "", vision_max_age_s: float = 3.0,
+                 vision_future_skew_s: float = 0.5):
         self.cse = cse
         self.event_writer = event_writer or cse
         self.engine = engine
         self.last_cin_ri: str | None = None
         self.last_published_status: str | None = None
         self.uncertain_event_status: str | None = None
+        self.alert_writer = alert_writer
+        self.last_alert_status: str | None = None
+        self.uncertain_alert_status: str | None = None
+        self.vision_path = vision_path
+        self.vision_max_age_s = vision_max_age_s
+        self.vision_future_skew_s = vision_future_skew_s
 
     def accept_message(self, message: Any, received_mono_s: float | None = None,
                        dedupe: bool = False) -> dict:
@@ -45,8 +55,22 @@ class RiskApplication:
         if frame.cin_ri:
             self.last_cin_ri = frame.cin_ri
         decision = self.engine.process_frame(frame, received_mono_s)
+        if self.vision_path:
+            decision = self.with_vision_advice(decision)
         self.publish_transition(decision)
         return decision
+
+    def with_vision_advice(self, decision: dict) -> dict:
+        if decision.get("status") != "SAFE":
+            return decision
+        try:
+            cin, _ = self.cse.get_latest_cin(self.vision_path)
+            observation = assess_vision(cin, time.monotonic(), time.time(),
+                                        self.vision_max_age_s, self.vision_future_skew_s)
+        except Exception as exc:
+            LOG.warning("Vision observation unavailable: %s", exc)
+            observation = {"status": "unavailable", "reason": str(exc), "raise_warning": False}
+        return apply_radar_advice(decision, observation)
 
     def poll_once(self) -> dict:
         try:
@@ -65,6 +89,7 @@ class RiskApplication:
 
     def publish_transition(self, decision: dict) -> None:
         status = decision.get("status", "UNKNOWN")
+        self.publish_alert(decision)
         if status == self.last_published_status:
             return
         if status == self.uncertain_event_status:
@@ -82,6 +107,25 @@ class RiskApplication:
         except Exception:
             # Keep the last published state unchanged; a later transition/retry can report it.
             LOG.exception("could not register risk event CIN")
+
+    def publish_alert(self, decision: dict) -> None:
+        if self.alert_writer is None:
+            return
+        status = decision.get("status", "UNKNOWN")
+        if status in (self.last_alert_status, self.uncertain_alert_status):
+            return
+        distance = decision.get("distance_m")
+        alert = {"level": {"SAFE": "safe", "WARNING": "warn", "DANGER": "danger"}.get(status, "unknown"),
+                 "dist": round(distance * 1000) if distance is not None else None, "ttc": None}
+        try:
+            self.alert_writer.create_event_cin(alert)
+            self.last_alert_status = status
+            self.uncertain_alert_status = None
+        except UncertainWriteError:
+            self.uncertain_alert_status = status
+            LOG.exception("alert result unknown; inspect the test container")
+        except Exception:
+            LOG.exception("could not register alert CIN")
 
 
 def _notification_server(app: RiskApplication, host: str, port: int) -> HTTPServer:
@@ -130,13 +174,19 @@ def main() -> None:
     parser.add_argument("--mqtt-topic", help="Exact tinyIoT notification request topic; configure SUB separately")
     parser.add_argument("--mqtt-client-id", help="Unique broker client ID (default: random)")
     parser.add_argument("--mqtt-events", action="store_true", help="Publish events with oneM2M MQTT binding")
+    parser.add_argument("--mqtt-alert-path", help="Explicit pre-existing test worker alert container path")
+    parser.add_argument("--vision-path", help="Optional fusedTracks latest-CIN path for the agreed camera_only+raise rule")
     parser.add_argument("--mqtt-cse-id", help="CSE ID without leading slash (required with --mqtt-events)")
     parser.add_argument("--mqtt-max-queue-age", type=float, default=3.0)
     args = parser.parse_args()
 
+    if args.mqtt_alert_path and (not args.mqtt_events or not args.mqtt_alert_path.startswith("/") or args.mqtt_alert_path.endswith("/")):
+        parser.error("--mqtt-alert-path requires --mqtt-events and an absolute container path")
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cse_config = one_m2m_config()
     event_writer = None
+    alert_writer = None
     if args.mqtt_events:
         if args.transport != "mqtt-notification" or not args.mqtt_cse_id:
             parser.error("--mqtt-events requires --transport mqtt-notification and --mqtt-cse-id")
@@ -145,7 +195,21 @@ def main() -> None:
                                        cse_config["cse_base"], cse_config["origin"],
                                        cse_config["events_path"], float(cse_config["http_timeout_s"]))
         event_writer.start()
-    app = RiskApplication(OneM2MHTTP(cse_config), RiskEngine(RiskConfig.from_env()), event_writer)
+        if args.mqtt_alert_path:
+            alert_writer = MQTTEventWriter(args.mqtt_host, args.mqtt_port, args.mqtt_cse_id,
+                                           cse_config["cse_base"], cse_config["origin"],
+                                           args.mqtt_alert_path, float(cse_config["http_timeout_s"]))
+            try:
+                alert_writer.start()
+            except Exception:
+                event_writer.close()
+                raise
+    app = RiskApplication(
+        OneM2MHTTP(cse_config), RiskEngine(RiskConfig.from_env()), event_writer, alert_writer,
+        vision_path=args.vision_path or cse_config["vision_path"],
+        vision_max_age_s=float(cse_config["vision_max_age_s"]),
+        vision_future_skew_s=float(cse_config["vision_future_skew_s"]),
+    )
     LOG.info("transport=%s cse=%s radar_path=%s events_path=%s", args.transport,
              cse_config["cse_base"], cse_config["radar_path"], cse_config["events_path"])
 
@@ -164,6 +228,8 @@ def main() -> None:
             LOG.info("MQTT notification receiver stopping")
         finally:
             receiver.close()
+            if alert_writer:
+                alert_writer.close()
             if event_writer:
                 event_writer.close()
         return

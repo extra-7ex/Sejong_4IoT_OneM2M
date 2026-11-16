@@ -56,6 +56,29 @@ class MQTTEventTests(unittest.TestCase):
         self.assertIsNone(app.last_published_status)
         self.assertEqual(app.uncertain_event_status, "WARNING")
 
+    def test_alert_and_event_have_independent_delivery_state(self):
+        class Writer:
+            def __init__(self):
+                self.calls = []
+                self.uncertain = False
+
+            def create_event_cin(self, body):
+                self.calls.append(body)
+                if self.uncertain:
+                    raise UncertainWriteError()
+
+        events, alerts = Writer(), Writer()
+        alerts.uncertain = True
+        app = RiskApplication(None, RiskEngine(RiskConfig()), events, alerts)
+        with self.assertLogs("safezone-riskengine", level="ERROR"):
+            app.publish_transition({"status": "WARNING", "distance_m": 1.25})
+        app.publish_transition({"status": "WARNING", "distance_m": 1.25})
+        self.assertEqual(len(events.calls), 1)
+        self.assertEqual(alerts.calls, [{"level": "warn", "dist": 1250, "ttc": None}])
+        alerts.uncertain = False
+        app.publish_transition({"status": "UNKNOWN"})
+        self.assertEqual(alerts.calls[-1], {"level": "unknown", "dist": None, "ttc": None})
+
 
 if __name__ == "__main__":
     unittest.main()
