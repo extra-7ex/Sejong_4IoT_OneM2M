@@ -2,7 +2,7 @@
 
 ## 문서 범위
 
-2026-11-12까지 공유된 팀 정보, GitHub 코드와 별도 시험 결과를 정리한다. **현재 프로토타입**, **코드·모의 시험**, **미검증 목표**는 서로 다르다. 각 시험의 서버·DB와 데이터 출처를 확인하고, 단일 시험 결과로 실제 장비 전체 연동이나 산업안전 성능을 주장하지 않는다.
+팀 공유 정보, GitHub 코드와 별도 시험 결과를 정리한다. 목표 구성과 관제 경로는 2026-11-16에 다시 대조했다. **현재 프로토타입**, **코드·모의 시험**, **미검증 목표**는 서로 다르다. 각 시험의 서버·DB와 데이터 출처를 확인하고, 단일 시험 결과로 실제 장비 전체 연동이나 산업안전 성능을 주장하지 않는다.
 
 - 저장소 기준: 기존 RiskEngine MVP와 Vision 코드; MQTT 수신·발행 엔진 시험은 별도 작업본이며 `main`에 반영되지 않았다.
 - 현태의 설명: LD2450은 Pi UART에 직접 연결되어 있으며 ESP8266은 레이더와 직접 연결하지 않고 tinyIoT의 HTTP 알림을 받는다. 장비별 현재 펌웨어·동작은 재확인이 필요하다.
@@ -30,21 +30,74 @@ flowchart LR
 
 점선은 특정 코드·시험 환경·목표 중 하나에 한정되며, 실제 전체 통합을 의미하지 않는다. `radar`, `events`, `fusedTracks`, `alert`는 MN-CSE 아래 CNT다. 현재 확인된 레이더 배선은 **LD2450 → Pi UART**다. ESP8266이 직접 radar를 읽는 구성은 과거 목표안이며 현재 배선으로 단정하지 않는다.
 
-### 향후 목표 경로
+### 표준 엔티티와 목표 배치
+
+센서 장치는 Pi의 수집 앱에 연결된다. 수집 앱의 oneM2M AE가 센서 데이터를 MN-CSE에 기록한다. MEC 플랫폼은 같은 Pi에 배치해 서비스 발견과 가용성 관리에 사용한다. Pi에서 두 플랫폼의 동시 실행은 미검증이다. 상위 그림은 관제 서버를 oneM2M 관점의 AE로 표시하며, 브라우저는 서버의 HTTP API를 사용한다.
 
 ```mermaid
-flowchart LR
-  LD["LD2450"] -->|"UART"| UP["레이더 업로더<br/>배치 확인 필요"]
-  UP -. "oneM2M MQTT 요청" .-> B["Mosquitto 브로커"]
-  B -. "요청 및 응답" .-> CSE["MN-CSE"]
-  CSE -. "radar SUB / MQTT notification" .-> RISK["RiskEngine"]
-  RISK -. "events 기록" .-> CSE
-  RISK -. "alert 기록 · 방식 미확정" .-> CSE
-  CSE -. "HTTP 또는 MQTT 알림<br/>방식 미확정" .-> ESP["ESP 경보 장치"]
-  CSE -. "MN–IN 등록 및 데이터 전달<br/>범위 별도 확인" .-> IN["IN-CSE"]
+flowchart TB
+  LD["레이더 장치"] -->|"UART"| RAD
+  CAM["카메라 장치"] -.->|"유선 영상 입력"| VIS
+
+  subgraph PI["지게차 엣지 노드 · Raspberry Pi 목표 배치"]
+    RAD["레이더 수집 AE · MEC 앱 목표"]
+    VIS["VisionAI AE · MEC 앱 목표"]
+    MN["tinyIoT MN-CSE"]
+    RISK["RiskEngine AE"]
+    MEC["ETSI MEC 플랫폼"]
+    AD["MEC 연동 어댑터 AE · MEC 앱 목표"]
+
+    RAD -->|"Mca · MQTT · radar CIN 생성"| MN
+    VIS -->|"Mca · fusedTracks CIN 생성"| MN
+    RISK -->|"Mca · HTTP · 최신 radar CIN 조회 / events CIN 생성"| MN
+    RISK -.->|"Mca · alert CIN 생성"| MN
+
+    RAD -.->|"Mp1 (MEC011) · 서비스 등록 / 상태 갱신"| MEC
+    VIS -.->|"Mp1 (MEC011) · 서비스 등록 / 상태 갱신"| MEC
+    AD -.->|"Mp1 (MEC011) · 서비스 발견 / 등록 상태 조회"| MEC
+    AD -.->|"Mca · 가용성 상태 CIN 기록"| MN
+    RISK -.->|"Mca · 가용성 상태 참조"| MN
+  end
+
+  ESP["작업자 단말 · 경보 AE"]
+  DASH["관제 대시보드 AE"]
+  IN["IN-CSE"]
+
+  ESP -.->|"Mca · AE 등록 또는 재사용 / alert 구독"| MN
+  MN -.->|"Mca · SUB 경보 알림 (Wi-Fi)"| ESP
+  MN -.->|"Mcc · CSE 등록 / 이벤트·상태 전달 목표"| IN
+  DASH -->|"Mca · HTTP · 최신 CIN 조회 기본 경로"| MN
+  DASH -->|"Mca · HTTP · 선택적 CSEBase 접속 확인"| IN
+  DASH -.->|"Mca · 관제 데이터 조회 목표"| IN
+
+  KEY["실선 = 현재 구현 경로<br/>점선 = 목표 또는 통합 미검증 경로"]
 ```
 
-RiskEngine과 MN 사이에 MQTT를 사용하는 방향을 목표로 한다. 현재 GitHub 엔진의 기본 입력·이벤트 출력은 HTTP다. 별도 MQTT 시험 작업본은 아래 시험 결과를 참고한다. 경보·장비 제어 및 네트워크 장애 시 동작은 설계·검증 대상이다.
+실선은 코드에 있는 경로를 뜻하며, 실제 Pi·센서·단말을 연결한 통합 시험 결과는 아래에 따로 기록한다. 현재 구현의 예는 radar 업로더의 MQTT 발행, Vision의 CIN 발행, RiskEngine MVP의 HTTP polling이다. 하드웨어 구현 예는 LD2450 레이더, 유선 카메라, ESP8266 경보 단말이다. 저장소에는 HTTP와 MQTT 경보 수신 코드가 모두 있으므로 작업자 단말의 실제 SUB 바인딩은 설치 펌웨어와 함께 확인한다.
+
+#### 등록 및 리소스 사전조건
+
+- **MN-CSE**에 쓰거나 구독하는 AE는 등록 또는 기존 등록을 재사용하고, 해당 CNT와 접근 권한을 준비한다. MQTT radar 알림 시험과 작업자 경보 목표에는 각각 별도 SUB와 알림 수신 주소가 필요하다.
+- **IN-CSE** 경유 관제를 구성하려면 MN-CSE 등록과 관제 AE의 조회 권한을 확인한다. 이벤트·상태를 IN에 보관할지, IN을 경유해 MN 리소스를 조회할지 결정하고 실제 조회로 검증한다.
+- **MEC 플랫폼**에서 앱 배치·등록과 서비스 등록을 각각 확인한다. 레이더 수집과 VisionAI의 제공 서비스, 어댑터의 발견 권한과 실제 점검 대상은 별도로 정의한다. [ETSI GS MEC 011 §5](https://www.etsi.org/deliver/etsi_gs/MEC/001_099/011/03.03.01_60/gs_MEC011v030301p.pdf)
+
+#### 관제 경로 확인
+
+[main의 대시보드 서버](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/blob/e851fbf8ea7407f7614512da73b7fdf3dd30513d/dashboard/server.py)는 기본적으로 `DASH_CSE_BASE`의 `TinyIoT-MN`에서 `radar`, `events`, `fusedTracks`, `alert`의 최신 CIN을 읽는다. 선택 설정 `DASH_IN_BASE`는 CSEBase 접속 확인용이다. 서버는 기본 `CAdmin`으로 GET 요청을 보내며 자체 AE 등록을 수행하지 않는다. 브라우저는 대시보드 서버의 `/api/*`를 조회한다.
+
+IN을 데이터 원본으로 쓰려면 선택한 전달 방식과 각 활성 조회 경로에서 실제 CIN을 읽을 수 있는지 확인해야 한다. 기본 서버는 네 가지 경로를 같은 `DASH_CSE_BASE`에 요청하므로 events 하나만 IN에 제공하면 나머지 경로의 데이터는 별도로 구성해야 한다. [대시보드 PR #12](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/pull/12)의 시험 보고 범위는 가짜 CSE이며 실제 Pi 통합은 미확인이다.
+
+#### MEC 가용성 확인 기준
+
+| 확인 지점 | 확인할 내용 |
+|---|---|
+| 서비스 등록부 | 어댑터가 Mp1로 레이더 수집·Vision 서비스를 각각 발견하고 등록 상태를 읽는다. |
+| 실제 입력 | 두 생산 앱을 하나씩 중단해 등록 상태와 실제 API 응답·최신 입력 시각을 각각 확인한다. 감지 주체, heartbeat/health check, 상태 갱신 방식은 미정이다. |
+| RiskEngine 목표 동작 | Vision이 끊겨도 신선한 레이더가 있으면 레이더 판단을 유지한다. 레이더가 끊기거나 오래되면 UNKNOWN으로 처리한다. 유효한 빈 레이더 프레임은 정상 입력이다. |
+
+[PR #16](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/pull/16)의 격리 환경에서는 모의 Vision의 등록·발견·호출을 시험했다. 모의 서비스를 멈췄을 때 호출은 실패했지만 등록부에 ACTIVE가 남았다. 실제 장비에서 장애 감지 주체와 상태 전달 방식이 정해지면, 장애 감지 → 상태 기록 → 판정 전환을 별도 호출 흐름으로 기록한다.
+
+이번 시연의 MQTT 호출 흐름은 아래의 격리 시험 범위다. 여러 지게차 MN과 작업자 AE가 연결되는 구성은 확장 시나리오이며, 작업자와 레이더 표적의 매핑은 미정이다.
 
 ### MQTT 통합 시험의 흐름
 
