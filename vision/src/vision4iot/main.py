@@ -47,7 +47,7 @@ def main(argv=None):
     ap.add_argument("--headless", action="store_true", help="화면 없이 1초마다 FPS 출력")
     ap.add_argument("--debug", action="store_true", help="자세 판정 값(몸통 각도·비율·무릎 각도) 표시")
     ap.add_argument("--calib", help="config의 calib.file 대신")
-    ap.add_argument("--radar", choices=["sim", "onem2m", "none"], help="config의 radar.source 대신 (sim = 카메라 위치로 가짜 레이더)")
+    ap.add_argument("--radar", choices=["sim", "onem2m", "mqtt", "none"], help="config의 radar.source 대신 (sim = 카메라 위치로 가짜 레이더)")
     ap.add_argument("--output", choices=["stdout", "jsonl", "onem2m", "none"], help="config의 output.mode 대신")
     ap.add_argument("--base-url", help="CSE 주소, 예 http://127.0.0.1:3000 (config onem2m.base_url 대신)")
     args = ap.parse_args(argv)
@@ -82,6 +82,16 @@ def main(argv=None):
     radar_in, sim = None, None
     if rsrc == "onem2m":
         radar_in = OneM2MRadar.from_cfg(cfg, args.base_url).start()
+    elif rsrc == "mqtt":
+        from vision4iot.radar.mqtt_in import MQTTRadar
+        mqtt = cfg.get("mqtt", {})
+        topic = mqtt.get("radar_topic")
+        if not topic:
+            ap.error("mqtt.radar_topic is required for --radar mqtt")
+        radar_in = MQTTRadar(mqtt.get("host", "127.0.0.1"), mqtt.get("port", 1883),
+                             topic, stale_s=mqtt.get("stale_s", 1.0),
+                             flip_x=cfg["radar"].get("flip_x", False),
+                             flip_v=cfg["radar"].get("flip_v", False)).start()
     elif rsrc == "sim":
         sim = RadarSim.from_cfg({**cfg["radar"]["sim"], "mode": "from_camera"}, resolve)
         print("NOTE: radar = sim (camera positions + noise) - not a real radar", file=sys.stderr)
