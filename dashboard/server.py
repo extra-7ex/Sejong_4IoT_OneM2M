@@ -56,6 +56,8 @@ def load_config() -> dict[str, Any]:
         "in_load_timeout_s": float(env("DASH_IN_LOAD_TIMEOUT_S", "15")),
         "history_file": env("DASH_HISTORY", str(Path(__file__).resolve().parent / "data" / "events.jsonl")),
         "history_max": int(env("DASH_HISTORY_MAX", "5000")),
+        # 1이면 실행 시각 이후 이벤트만 보여 준다(이전 이력은 지우지 않고 화면에서만 뺌)
+        "fresh": env("DASH_FRESH", "0").strip().lower() in ("1", "true", "yes", "on"),
         # 핫스팟 격자 (레이더 좌표, mm)
         "grid_mm": int(env("DASH_GRID_MM", "500")),
     }
@@ -148,8 +150,9 @@ class Store:
         self.in_mode = bool(cfg["in_base"])
         self.history_loaded = not self.in_mode   # IN 모드는 IN 이력을 불러온 뒤 True
         self.known_ri: set = set()
+        self.fresh = bool(cfg.get("fresh"))
         self.path = Path(cfg["history_file"])
-        if not self.in_mode:
+        if not self.in_mode and not self.fresh:
             self._load()
 
     def _load(self) -> None:
@@ -184,6 +187,9 @@ class Store:
                 return False
             if key:
                 self.known_ri.add(key)
+            # 새로 시작 모드: 실행 전에 생긴 이벤트(IN에 쌓인 옛 이력, MN 재시작 때 밀려 들어온 옛 프레임)는 숨긴다.
+            if self.fresh and rec.get("seen_at", 0) < self.started:
+                return False
             self.events.append(rec)
         if persist:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,7 +245,8 @@ class Store:
             return {"now": now, "sources": out, "health": dict(self.health),
                     "uptime_s": round(now - self.started),
                     "history": {"mode": "IN" if self.in_mode else "local",
-                                "loaded": self.history_loaded, "count": len(self.events)}}
+                                "loaded": self.history_loaded, "count": len(self.events),
+                                "fresh": self.fresh, "since": self.started if self.fresh else None}}
 
     def recent(self, limit: int) -> list[dict[str, Any]]:
         with self.lock:
@@ -389,13 +396,19 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="SafeZone 관제 대시보드")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--fresh", action="store_true",
+                    help="실행 시각 이후 이벤트만 표시 (이전 이력은 지우지 않음, DASH_FRESH=1과 같음)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config()
+    if args.fresh:
+        cfg["fresh"] = True
     store = Store(cfg)
     Poller(cfg, store, CseClient(cfg)).start()
     server = ThreadingHTTPServer((args.host, args.port), make_handler(store, cfg))
     LOG.info("대시보드: http://%s:%d  (CSE %s)", args.host, args.port, cfg["cse_base"])
+    if cfg["fresh"]:
+        LOG.info("새로 시작 모드: 실행 이후 이벤트만 표시 (이전 이력은 보존)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
