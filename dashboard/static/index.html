@@ -100,7 +100,7 @@
       <div class="muted" style="margin-top:8px;font-size:12px" id="stats-note"></div>
     </section>
     <section class="panel">
-      <h2>위험 이벤트 기록</h2>
+      <h2>위험 이벤트 기록 <span class="muted" style="text-transform:none;letter-spacing:0" id="log-src"></span></h2>
       <div id="log-wrap"><table><thead><tr><th>시각</th><th>상태</th><th>거리</th><th>t<sub>cpa</sub></th><th>사유</th></tr></thead>
         <tbody id="log"></tbody></table></div>
     </section>
@@ -110,12 +110,13 @@
 <script>
 const $ = id => document.getElementById(id);
 const COLORS = { SAFE: '#2fb36d', WARNING: '#f2a516', DANGER: '#e5484d', UNKNOWN: '#6b7480' };
-const SRC_LABEL = { radar: '레이더', events: '위험 판단', fused: 'Vision', alert: '경보(alert)' };
+const SRC_LABEL = { radar: '레이더', events: '위험 판단', fused: 'Vision', alert: '경보(alert)', in_events: 'IN 이력' };
 let latest = null, hotspots = [], params = { warning_distance_m: 3, danger_distance_m: 1.5 };
 
 const fmt = (v, unit, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? '-' : `${Number(v).toFixed(d)} ${unit}`;
 const ago = s => s === null || s === undefined ? '-' : s < 60 ? `${s.toFixed(0)}초 전` : s < 3600 ? `${(s/60).toFixed(0)}분 전` : `${(s/3600).toFixed(1)}시간 전`;
 const hhmmss = t => { const d = new Date(t * 1000), p = n => String(n).padStart(2, '0'); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+const whenStr = t => { const d = new Date(t * 1000), now = new Date(), p = n => String(n).padStart(2, '0'); return (d.toDateString() === now.toDateString() ? '' : `${p(d.getMonth() + 1)}/${p(d.getDate())} `) + hhmmss(t); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 async function getJSON(url) { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); }
@@ -153,11 +154,15 @@ function renderState(s) {
   $('radar-age').textContent = ra == null ? '· 레이더 데이터 없음' : (ra > 2 ? `· 레이더 ${ago(ra)} 이후 끊김` : `· 레이더 ${ago(ra)}`);
   $('radar-age').className = ra == null || ra > 2 ? 'warnline' : 'muted';
 
-  $('sources').innerHTML = ['radar', 'events', 'fused', 'alert'].map(k => {
+  const inMode = s.history?.mode === 'IN';
+  $('log-src').textContent = inMode ? `· IN-CSE ${s.config.in_events_path}${s.history.loaded ? '' : ' (불러오는 중)'}` : '· 이 대시보드가 실행 중에 기록';
+  const keys = inMode ? ['radar', 'events', 'fused', 'alert', 'in_events'] : ['radar', 'events', 'fused', 'alert'];
+  $('sources').innerHTML = keys.map(k => {
     const src = s.sources[k] || {}; const st = src.state || 'init';
+    const path = k === 'in_events' ? 'IN ' + s.config.in_events_path + '/la' : s.config[k + '_path'];
     const cls = st === 'ok' ? 'SAFE' : st === 'empty' ? 'muted' : st === 'init' ? 'muted' : 'DANGER';
     const label = st === 'ok' ? '수신' : st === 'empty' ? '데이터 없음' : st === 'init' ? '대기' : st.replace('error:', '오류 ');
-    return `<tr><td>${SRC_LABEL[k]}</td><td class="muted">${esc(s.config[k + '_path'])}</td><td class="${cls}">${esc(label)}</td><td>${ago(src.age_s)}</td></tr>`;
+    return `<tr><td>${SRC_LABEL[k]}</td><td class="muted">${esc(path)}</td><td class="${cls}">${esc(label)}</td><td>${ago(src.age_s)}</td></tr>`;
   }).join('');
   drawMap();
 }
@@ -214,9 +219,9 @@ async function refreshSlow() {
   try {
     const hours = $('range').value;
     const [events, stats] = await Promise.all([getJSON('/api/events?limit=100'), getJSON('/api/stats?hours=' + hours)]);
-    $('log').innerHTML = events.length ? events.map(e => `<tr><td>${hhmmss(e.seen_at)}</td><td class="${esc(e.status)}">${esc(e.status)}</td>
+    $('log').innerHTML = events.length ? events.map(e => `<tr><td>${whenStr(e.seen_at)}</td><td class="${esc(e.status)}">${esc(e.status)}</td>
       <td>${fmt(e.distance_m, 'm')}</td><td>${fmt(e.t_cpa_s, 's', 1)}</td><td class="reason">${esc(e.reason)}</td></tr>`).join('')
-      : '<tr><td colspan="5" class="muted">대시보드 실행 후 기록된 이벤트가 없음</td></tr>';
+      : `<tr><td colspan="5" class="muted">${latest?.history?.mode === 'IN' ? 'IN-CSE에 쌓인 이벤트가 없음 (브리지 실행 확인)' : '대시보드 실행 후 기록된 이벤트가 없음'}</td></tr>`;
     const max = Math.max(1, ...Object.values(stats.counts));
     $('bars').innerHTML = ['DANGER', 'WARNING', 'UNKNOWN', 'SAFE'].map(k => `<div class="bar"><span class="${k}">${k}</span>
       <div class="track"><div class="fill" style="width:${100 * stats.counts[k] / max}%;background:${COLORS[k]}"></div></div><span>${stats.counts[k]}</span></div>`).join('');

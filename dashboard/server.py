@@ -1,11 +1,13 @@
 """SafeZone 관제 대시보드 서버. 표준 라이브러리만 사용한다.
 
-tinyIoT CSE의 최신 CIN(`.../la`)을 주기적으로 읽어 메모리에 두고,
-위험 이벤트는 JSONL 파일에 쌓아 이력·통계·핫스팟을 만든다. 브라우저는 이 서버의 /api/* 만 호출한다
-(CSE 주소를 브라우저에 노출하지 않고, CORS 문제도 피한다).
+MN-CSE의 최신 CIN(`.../la`)을 주기적으로 읽어 실시간 화면(레이더·현재 판정)을 만든다.
+위험 이벤트 이력은 두 가지 중 하나에서 가져온다.
 
-CSE에는 GET .../la 와 CSEBase GET만 보낸다. CNT 하위 전체 조회(rcn=4)나 과거 CIN 개별 조회는 하지 않는다.
-이력은 대시보드가 실행 중에 본 이벤트만 남는다.
+- IN 모드 (`DASH_IN_BASE` 지정): `onem2m/mn_to_in_bridge.py`가 IN-CSE에 쌓은 요약 이력을 읽는다.
+  시작할 때 IN 이력 전체를 불러오고(rcn=4, 요약 CIN만 있는 컨테이너), 이후 IN의 `la`로 새 이벤트를 받는다.
+- 로컬 모드 (기본): 대시보드가 실행 중에 MN에서 본 이벤트를 JSONL 파일에 쌓는다.
+
+MN에는 `.../la` 조회와 CSEBase 조회만 보낸다. 브라우저는 이 서버의 /api/* 만 호출한다.
 
 실행 (저장소 루트에서):
     python -m dashboard.server --port 8080
@@ -37,10 +39,11 @@ LEVELS = ("DANGER", "WARNING", "UNKNOWN", "SAFE")
 def load_config() -> dict[str, Any]:
     env = os.getenv
     return {
-        # 데이터를 읽을 CSE. 지금은 MN. MN→IN 이벤트 전달이 생기면 IN 주소로 바꾼다.
+        # 실시간 데이터를 읽을 MN-CSE
         "cse_base": env("DASH_CSE_BASE", "http://127.0.0.1:3000/TinyIoT-MN").rstrip("/"),
-        # 상태 표시만 하는 IN-CSE (비우면 표시 안 함)
+        # IN-CSE. 지정하면 연결 상태를 표시하고, 위험 이력을 IN에서 읽는다(IN 모드)
         "in_base": env("DASH_IN_BASE", "").rstrip("/"),
+        "in_events_path": env("DASH_IN_EVENTS_PATH", "/AE-safezone/events"),
         "origin": env("DASH_ORIGIN", "CAdmin"),
         "rvi": env("DASH_RVI", "3"),
         "radar_path": env("DASH_RADAR_PATH", "/AE-forklift01/radar/la"),
@@ -49,7 +52,8 @@ def load_config() -> dict[str, Any]:
         "alert_path": env("DASH_ALERT_PATH", "/AE-forklift01/alert/la"),
         "poll_s": float(env("DASH_POLL_S", "0.5")),
         "health_s": float(env("DASH_HEALTH_S", "5")),
-        "timeout_s": float(env("DASH_TIMEOUT_S", "1.5")),
+        "timeout_s": float(env("DASH_TIMEOUT_S", "3")),
+        "in_load_timeout_s": float(env("DASH_IN_LOAD_TIMEOUT_S", "15")),
         "history_file": env("DASH_HISTORY", str(Path(__file__).resolve().parent / "data" / "events.jsonl")),
         "history_max": int(env("DASH_HISTORY_MAX", "5000")),
         # 핫스팟 격자 (레이더 좌표, mm)
@@ -82,7 +86,7 @@ class CseClient:
     def __init__(self, cfg: dict[str, Any]):
         self.cfg = cfg
 
-    def get(self, url: str) -> tuple[int, Any]:
+    def get(self, url: str, timeout: Optional[float] = None) -> tuple[int, Any]:
         req = urllib.request.Request(url, method="GET", headers={
             "X-M2M-Origin": self.cfg["origin"],
             "X-M2M-RI": "dash-" + uuid.uuid4().hex[:12],
@@ -90,16 +94,16 @@ class CseClient:
             "Accept": "application/json",
         })
         try:
-            with urllib.request.urlopen(req, timeout=self.cfg["timeout_s"]) as res:
+            with urllib.request.urlopen(req, timeout=timeout or self.cfg["timeout_s"]) as res:
                 raw = res.read()
                 return res.status, json.loads(raw.decode("utf-8")) if raw else None
         except urllib.error.HTTPError as exc:
             return exc.code, None
 
-    def latest(self, path: str) -> tuple[str, Optional[dict[str, Any]]]:
+    def latest(self, path: str, base: Optional[str] = None) -> tuple[str, Optional[dict[str, Any]]]:
         """('ok'|'empty'|'error:<사유>', cin)"""
         try:
-            status, body = self.get(self.cfg["cse_base"] + path)
+            status, body = self.get((base or self.cfg["cse_base"]) + path)
         except (urllib.error.URLError, OSError, ValueError) as exc:
             return f"error:{type(exc).__name__}", None
         if status == 404:
@@ -108,6 +112,16 @@ class CseClient:
             return f"error:HTTP {status}", None
         cin = unwrap_cin(body)
         return ("ok", cin) if cin else ("error:not a CIN", None)
+
+    def children(self, base: str, cnt_path: str) -> list[dict[str, Any]]:
+        """CNT 아래 CIN 전체 (오래된 것부터). IN의 요약 이력 컨테이너에만 쓴다."""
+        status, body = self.get(f"{base}{cnt_path}?rcn=4", timeout=self.cfg["in_load_timeout_s"])
+        if status == 404:
+            return []
+        if not 200 <= status < 300 or not isinstance(body, dict):
+            raise RuntimeError(f"HTTP {status}")
+        cnt = body.get("m2m:cnt", {})
+        return [c for c in (unwrap_cin({"m2m:cin": x}) for x in cnt.get("m2m:cin", [])) if c]
 
     def health(self, base: str) -> dict[str, Any]:
         started = time.monotonic()
@@ -131,8 +145,12 @@ class Store:
         self.health: dict[str, Any] = {}
         self.events: collections.deque = collections.deque(maxlen=cfg["history_max"])
         self.started = time.time()
+        self.in_mode = bool(cfg["in_base"])
+        self.history_loaded = not self.in_mode   # IN 모드는 IN 이력을 불러온 뒤 True
+        self.known_ri: set = set()
         self.path = Path(cfg["history_file"])
-        self._load()
+        if not self.in_mode:
+            self._load()
 
     def _load(self) -> None:
         if not self.path.exists():
@@ -159,6 +177,36 @@ class Store:
             src["seen_at"] = now
             return is_new
 
+    def _append(self, rec: dict[str, Any], persist: bool, key: Optional[str] = None) -> bool:
+        key = key or rec.get("ri")
+        with self.lock:
+            if key and key in self.known_ri:
+                return False
+            if key:
+                self.known_ri.add(key)
+            self.events.append(rec)
+        if persist:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return True
+
+    def add_in_summary(self, cin: dict[str, Any]) -> bool:
+        """IN의 요약 CIN(브리지가 만든 것)을 이력 한 줄로 바꿔 넣는다."""
+        con = cin["con"] if isinstance(cin["con"], dict) else {}
+        ts = con.get("ts")
+        status = str(con.get("status", "UNKNOWN")).upper()
+        rec = {
+            "ri": cin.get("ri"), "ct": cin.get("ct"),
+            "seen_at": float(ts) if isinstance(ts, (int, float)) else time.time(),
+            "status": status if status in LEVELS else "UNKNOWN",
+            "reason": con.get("reason"), "distance_m": con.get("distance_m"),
+            "t_cpa_s": con.get("t_cpa_s"), "d_cpa_m": con.get("d_cpa_m"),
+            "target_count": con.get("n"), "radar_xy_mm": con.get("xy_mm") or [], "source": "IN",
+        }
+        # 같은 MN 이벤트가 IN에 두 번 올라간 경우(재전송)도 한 줄로 보이게 MN 원본 ri로 중복을 거른다.
+        return self._append(rec, persist=False, key=con.get("mn_ri") or cin.get("ri"))
+
     def add_event(self, cin: dict[str, Any], radar: Optional[dict[str, Any]]) -> None:
         con = cin["con"] if isinstance(cin["con"], dict) else {"raw": cin["con"]}
         status = str(con.get("status", "UNKNOWN")).upper()
@@ -172,13 +220,9 @@ class Store:
             "ri": cin.get("ri"), "ct": cin.get("ct"), "seen_at": time.time(), "status": status,
             "reason": con.get("reason"), "distance_m": con.get("distance_m"),
             "t_cpa_s": con.get("t_cpa_s"), "d_cpa_m": con.get("d_cpa_m"),
-            "target_count": con.get("target_count"), "radar_xy_mm": targets_xy,
+            "target_count": con.get("target_count"), "radar_xy_mm": targets_xy, "source": "local",
         }
-        with self.lock:
-            self.events.append(rec)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        self._append(rec, persist=True)
 
     def snapshot(self) -> dict[str, Any]:
         now = time.time()
@@ -193,7 +237,9 @@ class Store:
                     "age_s": None if src["changed_at"] is None else round(now - src["changed_at"], 1),
                 }
             return {"now": now, "sources": out, "health": dict(self.health),
-                    "uptime_s": round(now - self.started)}
+                    "uptime_s": round(now - self.started),
+                    "history": {"mode": "IN" if self.in_mode else "local",
+                                "loaded": self.history_loaded, "count": len(self.events)}}
 
     def recent(self, limit: int) -> list[dict[str, Any]]:
         with self.lock:
@@ -242,13 +288,38 @@ class Poller(threading.Thread):
             self.store.update_source(name, state, cin)
         state, cin = self.client.latest(self.cfg["events_path"])
         is_new = self.store.update_source("events", state, cin)
-        # 처음 성공한 조회의 la는 대시보드 실행 전에 생긴 이벤트일 수 있다. 화면에만 보이고 이력엔 넣지 않는다.
+        if self.store.in_mode:
+            self.poll_in_history()
+            return
+        # 로컬 모드: 처음 성공한 조회의 la는 대시보드 실행 전 이벤트일 수 있다. 화면에만 보이고 이력엔 넣지 않는다.
         if is_new and cin is not None and self.baseline_done:
             with self.store.lock:
                 radar = (self.store.sources.get("radar") or {}).get("cin")
             self.store.add_event(cin, radar)
         if state in ("ok", "empty"):
             self.baseline_done = True
+
+    def load_in_history(self) -> None:
+        """IN 이력 전체를 한 번 불러온다. 실패하면 다음 루프에서 다시 시도한다."""
+        try:
+            cins = self.client.children(self.cfg["in_base"], self.cfg["in_events_path"])
+        except (RuntimeError, urllib.error.URLError, OSError, ValueError) as exc:
+            with self.store.lock:
+                self.store.sources["in_events"] = {"cin": None, "state": f"error:{exc}"[:60],
+                                                   "seen_at": None, "changed_at": None}
+            return
+        added = sum(self.store.add_in_summary(c) for c in cins[-self.cfg["history_max"]:])
+        self.store.history_loaded = True
+        LOG.info("IN 이력 %d건 불러옴 (%s%s)", added, self.cfg["in_base"], self.cfg["in_events_path"])
+
+    def poll_in_history(self) -> None:
+        if not self.store.history_loaded:
+            self.load_in_history()
+            if not self.store.history_loaded:
+                return
+        state, cin = self.client.latest(self.cfg["in_events_path"] + "/la", base=self.cfg["in_base"])
+        if self.store.update_source("in_events", state, cin) and cin is not None:
+            self.store.add_in_summary(cin)
 
     def check_health(self) -> None:
         health = {"mn": self.client.health(self.cfg["cse_base"])}
@@ -274,7 +345,7 @@ class Poller(threading.Thread):
 # ---------------------------------------------------------------- HTTP
 
 def make_handler(store: Store, cfg: dict[str, Any]):
-    public_cfg = {k: cfg[k] for k in ("cse_base", "in_base", "radar_path", "events_path", "fused_path",
+    public_cfg = {k: cfg[k] for k in ("cse_base", "in_base", "in_events_path", "radar_path", "events_path", "fused_path",
                                       "alert_path", "poll_s", "grid_mm")}
 
     class Handler(BaseHTTPRequestHandler):
