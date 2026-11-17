@@ -3,7 +3,28 @@
 
 ### Vision 조언과 작업자 alert 시험
 
-`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다. 주기 타이머 폴링이 아니라 SAFE 레이더 입력에 따른 조회다. producer `ts`가 현재 시각 기준 3초 이내이고 `cam_ok=true`인 결과에서 `camera_only` 표적에 `advice="raise"`가 있으면 최종 판정을 `WARNING`으로 올린다. Vision 입력이 없거나 오래됐거나 유효하지 않으면 레이더 판정을 유지한다. `DANGER`와 기존 `WARNING`은 Vision 조언으로 낮추지 않는다. 임계값은 `VISION_MAX_AGE_S`와 `VISION_FUTURE_SKEW_S`로 조정한다. 시계가 동기화됐다는 가정이 필요하다.
+`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`·`WARNING`·`DANGER`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다(`UNKNOWN`일 때는 조회하지 않고 그대로 둔다). 주기 타이머 폴링이 아니라 레이더 입력에 따른 조회다. Vision 입력이 없거나 오래됐거나 `cam_ok=false`이거나 유효하지 않으면 레이더 판정을 유지한다. 시계가 동기화됐다는 가정이 필요하다.
+
+| 규칙 | 조건 | 결과 |
+|---|---|---|
+| 카메라 단독 올리기 | 레이더 `SAFE`, Vision `ts` 3초 이내, `camera_only` + `raise` | `WARNING` |
+| 자세 올리기 | 레이더 `WARNING` 표적, 같은 슬롯(`radar_id`)이고 거리 차 0.5m 이내인 `confirmed` + `raise`, 자세 `crouching`·`lying`, Vision 3초 이내 | 그 표적 `DANGER` |
+| 유령 낮추기 | 레이더 `DANGER` 표적, 같은 슬롯이고 거리 차 0.5m 이내인 `ghost_suspect` + `lower_to_caution`, 표적 거리 1m 초과, Vision **1초** 이내 | 그 표적 `WARNING` (`SAFE`로는 내리지 않음) |
+
+표적마다 조정한 뒤 가장 높은 단계를 최종 판정으로 쓴다. 다른 표적이 진짜 `DANGER`면 유령을 낮춰도 `DANGER`다. 직전 표적을 잃어 이전 위험을 유지 중인 표적(`held_previous_risk`)과 연결이 불확실한 표적은 조정하지 않는다. 조정 내용은 판정의 `vision_adjustments`, 레이더만의 판정은 `radar_status`에 남는다.
+
+**해제 지연:** `WARNING`·`DANGER`에서 `SAFE`로 내려갈 때는 `SAFE`가 3초 이어져야 내려간다(팀 규칙 "안전 상태 3초 유지 후 재가동"). 그동안은 직전 위험 단계를 `reason=release_hold_waiting_for_safe`로 유지한다. `DANGER`→`WARNING`과 모든 상향, `UNKNOWN`은 바로 반영한다. `UNKNOWN`이 끼면 SAFE 연속 시간은 처음부터 다시 센다. 주기 `tick()`은 레이더가 신선한 동안 Vision이 반영된 마지막 판정을 다시 쓰므로, Vision이 올린 단계를 레이더 단독 판정으로 되돌리지 않는다.
+
+| 환경 변수 | 기본값 | 의미 |
+|---|---|---|
+| `VISION_MAX_AGE_S` | 3.0 | 올리기에 쓰는 Vision 최대 나이 |
+| `VISION_LOWER_MAX_AGE_S` | 1.0 | 유령 낮추기에 쓰는 Vision 최대 나이 |
+| `VISION_GHOST_MIN_DISTANCE_M` | 1.0 | 이 거리 안의 표적은 낮추지 않음 |
+| `VISION_MATCH_TOLERANCE_M` | 0.5 | Vision 표적과 레이더 표적의 거리 차 허용 |
+| `VISION_FUTURE_SKEW_S` | 0.5 | Vision `ts`가 미래로 허용되는 오차 |
+| `RISK_RELEASE_HOLD_S` | 3.0 | `SAFE` 해제 지연 (0이면 끔) |
+
+위 규칙은 단위 시험(`engine/test_vision_advice.py`)으로만 확인했다. 실제 VisionAI fusedTracks와 실제 LD2450으로는 아직 시험하지 않았다.
 
 `--mqtt-events`와 `--mqtt-alert-path /AE-worker01/alert-test`를 함께 지정하면 미리 만든 단일 시험 작업자 CNT에 상태 변경 시 `level`, `dist`(mm), `ttc`(null)를 기록한다. alert 발행은 기본적으로 꺼져 있다. events와 alert는 각자 응답과 불확실 상태를 추적한다. 같은 상태의 결과가 불확실하면 자동 재전송하지 않는다.
 
