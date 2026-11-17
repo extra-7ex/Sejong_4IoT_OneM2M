@@ -43,7 +43,8 @@ def load_config() -> dict[str, Any]:
         "in_mni": int(env("BRIDGE_IN_MNI", "5000")),
         "rvi": env("BRIDGE_RVI", "3"),
         "poll_s": float(env("BRIDGE_POLL_S", "0.5")),
-        "timeout_s": float(env("BRIDGE_TIMEOUT_S", "2")),
+        # Pi(SD카드 DB)에서는 CIN 생성 응답이 1~2초 걸리기도 한다. 짧으면 저장은 됐는데 실패로 보고 중복 전송한다.
+        "timeout_s": float(env("BRIDGE_TIMEOUT_S", "10")),
         "state_file": env("BRIDGE_STATE", str(Path.home() / ".safezone_bridge_state.json")),
     }
 
@@ -183,6 +184,17 @@ class Bridge:
             radar = latest_cin(self.mn, self.cfg["radar_path"])
         except RuntimeError:
             radar = None
+        # 앞선 전송이 응답 시간 초과로 실패로 보였지만 실제로는 IN에 저장된 경우, 다시 보내지 않는다.
+        in_path = f"/{self.cfg['in_ae']}/{self.cfg['in_cnt']}"
+        try:
+            in_last = latest_cin(self.inn, in_path + "/la")
+        except RuntimeError:
+            in_last = None
+        if in_last and isinstance(in_last.get("con"), dict) and in_last["con"].get("mn_ri") == event["ri"]:
+            self.last_ri = event["ri"]
+            self._save_state()
+            LOG.info("이미 IN에 있는 이벤트라 건너뜀: %s", event["ri"])
+            return False
         con = summarize(event["con"], event["ri"], radar)
         status, body = self.inn.request("POST", f"/{self.cfg['in_ae']}/{self.cfg['in_cnt']}", 4,
                                         {"m2m:cin": {"con": con}})
