@@ -47,6 +47,8 @@
   .muted { color: var(--muted); } .warnline { color: var(--warn); }
   #log-wrap { max-height: 330px; overflow: auto; }
   select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  #reset-btn { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  #reset-btn:disabled { opacity: .5; cursor: default; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } .metrics { gap: 16px; } #banner { flex-wrap: wrap; } }
 </style>
 </head>
@@ -100,7 +102,8 @@
       <div class="muted" style="margin-top:8px;font-size:12px" id="stats-note"></div>
     </section>
     <section class="panel">
-      <h2>위험 이벤트 기록 <span class="muted" style="text-transform:none;letter-spacing:0" id="log-src"></span></h2>
+      <h2>위험 이벤트 기록 <span class="muted" style="text-transform:none;letter-spacing:0" id="log-src"></span>
+        <button id="reset-btn" type="button" style="float:right">화면 초기화</button></h2>
       <div id="log-wrap"><table><thead><tr><th>시각</th><th>상태</th><th>거리</th><th>t<sub>cpa</sub></th><th>사유</th></tr></thead>
         <tbody id="log"></tbody></table></div>
     </section>
@@ -239,6 +242,11 @@ async function refreshFast() {
 
 $('range').onchange = refreshSlow;
 refreshFast(); refreshSlow();
+$('reset-btn').onclick = async () => {
+  const btn = $('reset-btn'); btn.disabled = true;
+  try { await fetch('/api/reset', { method: 'POST' }); await refreshSlow(); await refreshFast(); }
+  finally { btn.disabled = false; }
+};
 setInterval(refreshFast, 500); setInterval(refreshSlow, 3000);
 </script>
 </body>
