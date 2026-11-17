@@ -32,6 +32,7 @@ class DashboardTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         cfg = load_config()
         cfg["history_file"] = str(Path(self.tmp.name) / "events.jsonl")
+        cfg["fresh"] = False                                  # 기존 테스트는 전체 이력 기준
         self.cfg = cfg
         self.store = Store(cfg)
         self.client = FakeClient()
@@ -84,6 +85,7 @@ class InModeTest(unittest.TestCase):
         cfg = load_config()
         cfg["history_file"] = str(Path(self.tmp.name) / "events.jsonl")
         cfg["in_base"] = "http://in.example/TinyIoT"
+        cfg["fresh"] = False                                  # 기존 테스트는 전체 이력 기준
         self.cfg = cfg
         self.store = Store(cfg)
         self.client = FakeClient()
@@ -147,6 +149,24 @@ class InModeTest(unittest.TestCase):
         poller.poll_once()
         self.assertEqual([r["ri"] for r in store.recent(10)], ["new"])
         self.assertTrue(store.snapshot()["history"]["fresh"])
+
+
+    def test_reset_clears_screen_and_keeps_new(self):
+        import time
+        self.client.history = [self.summary("a", "DANGER", time.time() - 60)]
+        self.poller.poll_once()
+        self.assertEqual(len(self.store.recent(10)), 1)
+        self.store.reset()
+        self.assertEqual(self.store.recent(10), [])
+        self.assertEqual(self.store.stats(3600)["total"], 0)
+        self.client.responses[self.cfg["in_events_path"] + "/la"] = ("ok", unwrap_cin({"m2m:cin": self.summary("b", "SAFE", time.time() + 1)}))
+        self.poller.poll_once()
+        self.assertEqual([r["ri"] for r in self.store.recent(10)], ["b"])
+
+    def test_fresh_is_default(self):
+        import os
+        os.environ.pop("DASH_FRESH", None)
+        self.assertTrue(load_config()["fresh"])
 
 
 class FreshLocalTest(DashboardTest):
