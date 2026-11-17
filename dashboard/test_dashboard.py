@@ -114,6 +114,13 @@ class InModeTest(unittest.TestCase):
         self.assertEqual(stats["hotspots"][0]["DANGER"], 1)
         self.assertFalse(Path(self.cfg["history_file"]).exists())             # IN 모드는 로컬 파일을 쓰지 않음
 
+    def test_duplicate_in_copies_of_same_mn_event_shown_once(self):
+        a = self.summary("x1", "DANGER", 1.0); a["con"]["mn_ri"] = "mn-7"
+        b = self.summary("x2", "DANGER", 1.0); b["con"]["mn_ri"] = "mn-7"
+        self.client.history = [a, b]
+        self.poller.poll_once()
+        self.assertEqual([r["ri"] for r in self.store.recent(10)], ["x1"])
+
     def test_mn_events_not_recorded_locally_in_in_mode(self):
         self.poller.poll_once()
         self.set_mn_event()
