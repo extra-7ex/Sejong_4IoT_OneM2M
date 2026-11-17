@@ -69,6 +69,11 @@ class BridgeTest(unittest.TestCase):
             br.mn.store["/AE-riskengine/events"].append(("mn-2", json.dumps({**BIG_EVENT, "status": "SAFE"})))
             self.assertTrue(br.step())
             self.assertEqual(len(br.inn.store["/AE-safezone/events"]), 2)
+            # 시간 초과로 실패처럼 보였지만 IN에는 저장된 경우: 상태 파일이 없어도 다시 보내지 않음
+            br.mn.store["/AE-riskengine/events"].append(("mn-3", json.dumps(BIG_EVENT)))
+            br.inn.store["/AE-safezone/events"].append(("in-x", summarize(BIG_EVENT, "mn-3", None)))
+            self.assertFalse(br.step())
+            self.assertEqual(len(br.inn.store["/AE-safezone/events"]), 3)
             again = Bridge(cfg)                              # 재시작해도 마지막 전달 위치를 기억
             again.mn, again.inn = br.mn, br.inn
             again.ready = True
