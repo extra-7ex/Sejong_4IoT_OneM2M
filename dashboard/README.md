@@ -51,6 +51,7 @@ DASH_CSE_BASE=http://127.0.0.1:3900/TinyIoT-MN python3 -m dashboard.server --por
 | `DASH_POLL_S` | `0.5` | 조회 주기(초) |
 | `DASH_HISTORY` | `dashboard/data/events.jsonl` | 이력 파일 |
 | `DASH_GRID_MM` | `500` | 핫스팟 격자 크기(mm) |
+| `DASH_FRESH` | `0` | `1`이면 실행 시각 이후 이벤트만 표시(`--fresh`와 같음). 이전 이력은 지우지 않고 화면에서만 숨김 |
 
 Pi의 CSEBase 이름이 아직 `TinyIoT-mn`이거나 AE 이름이 `forklift01`이면 `DASH_CSE_BASE`, `DASH_RADAR_PATH`를 실제 값으로 바꾼다([CSE 명명안](../docs/cse-naming.md)).
 
