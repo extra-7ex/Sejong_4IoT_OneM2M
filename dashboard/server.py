@@ -177,12 +177,13 @@ class Store:
             src["seen_at"] = now
             return is_new
 
-    def _append(self, rec: dict[str, Any], persist: bool) -> bool:
+    def _append(self, rec: dict[str, Any], persist: bool, key: Optional[str] = None) -> bool:
+        key = key or rec.get("ri")
         with self.lock:
-            if rec.get("ri") and rec["ri"] in self.known_ri:
+            if key and key in self.known_ri:
                 return False
-            if rec.get("ri"):
-                self.known_ri.add(rec["ri"])
+            if key:
+                self.known_ri.add(key)
             self.events.append(rec)
         if persist:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -203,7 +204,8 @@ class Store:
             "t_cpa_s": con.get("t_cpa_s"), "d_cpa_m": con.get("d_cpa_m"),
             "target_count": con.get("n"), "radar_xy_mm": con.get("xy_mm") or [], "source": "IN",
         }
-        return self._append(rec, persist=False)
+        # 같은 MN 이벤트가 IN에 두 번 올라간 경우(재전송)도 한 줄로 보이게 MN 원본 ri로 중복을 거른다.
+        return self._append(rec, persist=False, key=con.get("mn_ri") or cin.get("ri"))
 
     def add_event(self, cin: dict[str, Any], radar: Optional[dict[str, Any]]) -> None:
         con = cin["con"] if isinstance(cin["con"], dict) else {"raw": cin["con"]}
