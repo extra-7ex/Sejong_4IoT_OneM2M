@@ -15,6 +15,7 @@ from .risk_engine import InputError, RiskEngine, normalize_radar_cin
 from .mqtt_events import UncertainWriteError
 from .vision_advice import assess as assess_vision
 from .vision_advice import apply_radar_advice
+from .vision_advice import ReleaseHold
 
 
 LOG = logging.getLogger("safezone-riskengine")
@@ -37,6 +38,9 @@ class RiskApplication:
         self.vision_path = vision_path
         self.vision_max_age_s = vision_max_age_s
         self.vision_future_skew_s = vision_future_skew_s
+        self.release_hold = ReleaseHold(engine.config.release_hold_s)
+        self.fused_source: dict | None = None    # radar decision the last fused decision came from
+        self.fused_decision: dict | None = None  # radar + Vision, before the release hold
 
     def accept_message(self, message: Any, received_mono_s: float | None = None,
                        dedupe: bool = False) -> dict:
@@ -54,14 +58,16 @@ class RiskApplication:
             return self.engine.snapshot(received_mono_s)
         if frame.cin_ri:
             self.last_cin_ri = frame.cin_ri
-        decision = self.engine.process_frame(frame, received_mono_s)
-        if self.vision_path:
-            decision = self.with_vision_advice(decision)
+        radar_decision = self.engine.process_frame(frame, received_mono_s)
+        decision = self.with_vision_advice(radar_decision) if self.vision_path else radar_decision
+        self.fused_source, self.fused_decision = radar_decision, decision
+        now = self.engine.clock() if received_mono_s is None else received_mono_s
+        decision = self.release_hold.apply(decision, now)
         self.publish_transition(decision)
         return decision
 
     def with_vision_advice(self, decision: dict) -> dict:
-        if decision.get("status") != "SAFE":
+        if decision.get("status") not in ("SAFE", "WARNING", "DANGER"):
             return decision
         try:
             cin, _ = self.cse.get_latest_cin(self.vision_path)
@@ -70,7 +76,12 @@ class RiskApplication:
         except Exception as exc:
             LOG.warning("Vision observation unavailable: %s", exc)
             observation = {"status": "unavailable", "reason": str(exc), "raise_warning": False}
-        return apply_radar_advice(decision, observation)
+        config = self.engine.config
+        return apply_radar_advice(decision, observation,
+                                  lower_max_age_s=config.vision_lower_max_age_s,
+                                  ghost_min_distance_m=config.vision_ghost_min_distance_m,
+                                  match_tolerance_m=config.vision_match_tolerance_m,
+                                  ghost_lower_enabled=config.vision_ghost_lower_enabled)
 
     def poll_once(self) -> dict:
         try:
@@ -83,7 +94,15 @@ class RiskApplication:
         return decision
 
     def tick(self) -> dict:
-        decision = self.engine.snapshot()
+        now = self.engine.clock()
+        radar_decision = self.engine.snapshot(now)
+        # A fresh radar snapshot is the decision Vision was already applied to; reuse the fused
+        # result so a tick never undoes a Vision adjustment. A stale snapshot is UNKNOWN as before.
+        if radar_decision is self.fused_source and self.fused_decision is not None:
+            decision = self.fused_decision
+        else:
+            decision = radar_decision
+        decision = self.release_hold.apply(decision, now)
         self.publish_transition(decision)
         return decision
 

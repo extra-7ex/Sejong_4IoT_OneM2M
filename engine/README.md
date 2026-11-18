@@ -3,7 +3,15 @@
 
 ### Vision 조언과 작업자 alert 시험
 
-`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다. 주기 타이머 폴링이 아니라 SAFE 레이더 입력에 따른 조회다. producer `ts`가 현재 시각 기준 3초 이내이고 `cam_ok=true`, `radar_ok=true`인 결과에서 `camera_only` 표적에 `advice="raise"`가 있으면 최종 판정을 `WARNING`으로 올린다. `radar_ok`가 없거나 boolean true가 아니면 Vision 조언을 적용하지 않고 `vision_radar_unavailable`을 기록한다. Vision 입력이 없거나 오래됐거나 유효하지 않으면 레이더 판정을 유지한다. `DANGER`와 기존 `WARNING`은 Vision 조언으로 낮추지 않는다. 임계값은 `VISION_MAX_AGE_S`와 `VISION_FUTURE_SKEW_S`로 조정한다. 시계가 동기화됐다는 가정이 필요하다.
+`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 입력에 따라 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다. 주기 타이머 폴링이 아니라 레이더 입력에 따른 조회다. producer `ts`가 현재 시각 기준 3초 이내이고 `cam_ok=true`, `radar_ok=true`인 결과에서 `camera_only` 표적에 `advice="raise"`가 있으면 레이더 `SAFE`를 `WARNING`으로 올린다. `radar_ok`가 없거나 boolean true가 아니면 Vision 조언을 적용하지 않고 `vision_radar_unavailable`을 기록한다. Vision 입력이 없거나 오래됐거나 유효하지 않으면 레이더 판정을 유지한다. 임계값은 `VISION_MAX_AGE_S`와 `VISION_FUTURE_SKEW_S`로 조정한다. 시계가 동기화됐다는 가정이 필요하다.
+
+### 융합 규칙과 SAFE 해제 지연
+
+Vision 조회는 레이더의 `SAFE`, `WARNING`, `DANGER` 입력 때 수행한다. `UNKNOWN`은 Vision으로 변경하지 않는다. 신선한 `confirmed` + `raise`에서 같은 레이더 슬롯과 0.5m 이내 거리 차의 `crouching` 또는 `lying` 표적은 `WARNING`에서 `DANGER`로 올린다. 슬롯 연속성과 좌표 보정은 실제 장비에서 검증해야 한다.
+
+`WARNING` 또는 `DANGER` 이후 `SAFE`가 기본 3초 연속 유지되어야 해제한다. `RISK_RELEASE_HOLD_S=1.5`로 시험별 조정이 가능하다. `UNKNOWN`과 위험 상향은 즉시 반영하며 `DANGER`에서 `WARNING`으로의 변경도 지연하지 않는다. 유령 표적의 위험도를 낮추는 기능은 기본 비활성이다. 별도 시험에서만 `VISION_GHOST_LOWER_ENABLED=true`로 켤 수 있다. 이때 같은 슬롯, 거리 차, Vision 신선도 및 최소 거리 조건을 확인하고 `DANGER`를 `WARNING`까지만 낮춘다. 실제 사람 누락 가능성을 실장비에서 확인하기 전에는 운영에 적용하지 않는다.
+
+이 융합·해제 규칙과 `radar_ok` 조건은 결합 후 단위 시험으로 확인했으며 Pi의 실제 Vision 및 레이더 연결로는 아직 시험하지 않았다.
 
 `--mqtt-events`와 `--mqtt-alert-path /AE-worker01/alert-test`를 함께 지정하면 미리 만든 단일 시험 작업자 CNT에 상태 변경 시 `level`, `dist`(mm), `ttc`(null)를 기록한다. alert 발행은 기본적으로 꺼져 있다. events와 alert는 각자 응답과 불확실 상태를 추적한다. 같은 상태의 결과가 불확실하면 자동 재전송하지 않는다.
 

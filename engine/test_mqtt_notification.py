@@ -74,9 +74,10 @@ class MQTTNotificationTests(unittest.TestCase):
 
     def test_empty_frames_hold_danger_then_safe_and_silence_unknown(self):
         # Fake time and MQTT callback: this verifies application logic, not a broker/CSE.
+        # The release hold is off here; test_vision_advice covers the 3 s SAFE hold.
         now = [10.0]
         cse = FakeCSE()
-        app = RiskApplication(cse, RiskEngine(RiskConfig(), clock=lambda: now[0]))
+        app = RiskApplication(cse, RiskEngine(RiskConfig(release_hold_s=0), clock=lambda: now[0]))
         rx = MQTTNotifications(app, "127.0.0.1", 1883, "/test")
 
         def send(ri, targets):

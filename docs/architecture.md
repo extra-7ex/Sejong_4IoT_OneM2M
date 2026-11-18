@@ -24,7 +24,7 @@ flowchart LR
   CAM["카메라"] -. "녹화 영상 시험<br/>C270 실시간 미검증" .-> VISION["Vision AI"]
   RAD -. "HTTP polling 코드·시험 보고<br/>PR #21은 MQTT radar 입력" .-> VISION
   VISION -. "fusedTracks CIN<br/>시험 보고" .-> FUSED["fusedTracks CNT"]
-  ENGINE -. "HTTP GET latest fusedTracks/la<br/>radar SAFE일 때만 · Pi 시험" .-> FUSED
+  ENGINE -. "HTTP GET latest fusedTracks/la<br/>SAFE일 때 Pi 시험 · 현재 SAFE/WARNING/DANGER" .-> FUSED
   FUSED -. "모의 Vision CIN 응답" .-> ENGINE
   ENGINE -. "MQTT alert CIN<br/>시험 CNT만" .-> TEST_ALERT["alert test CNT"]
   UP -. "LOCAL_DECISION 임시 alert 기록<br/>실행 버전 확인 필요" .-> ALERT["alert CNT"]
@@ -55,7 +55,7 @@ flowchart TB
     VIS -->|"Mca · fusedTracks CIN 생성"| MN
     MN -->|"Mca · MQTT SUB radar notification"| RISK
     RISK -->|"Mca · MQTT events CIN 생성"| MN
-    RISK -.->|"Mca · HTTP GET 최신 fusedTracks/la<br/>레이더 SAFE일 때만"| MN
+    RISK -.->|"Mca · HTTP GET 최신 fusedTracks/la<br/>SAFE/WARNING/DANGER 입력 시"| MN
     RISK -.->|"Mca · MQTT alert CIN 생성<br/>시험 CNT에서 확인"| MN
 
     RAD -.->|"Mp1 (MEC011) · 서비스 등록 / 상태 갱신"| MEC
@@ -79,7 +79,7 @@ flowchart TB
   KEY["실선 = 현재 구현 경로<br/>점선 = 목표 또는 통합 미검증 경로"]
 ```
 
-실선은 코드에 있는 경로를 뜻하며, 실제 Pi·센서·단말을 연결한 통합 시험 결과는 아래에 따로 기록한다. PR #14의 RiskEngine 작업본은 radar MQTT notification 입력과 MQTT `events` 출력을 제공한다. 별도 엔진 변경은 SAFE 판정에서만 `fusedTracks/la`를 HTTP GET하고, `events`·`alert`를 MQTT로 쓰는 혼합 경로를 Pi 시험 CNT에서 확인했다. 레이더·Vision 데이터는 모의였고 작업자 단말은 연결하지 않았다. 저장소에는 HTTP와 MQTT 경보 수신 코드가 모두 있으므로 작업자 단말의 실제 SUB 바인딩은 설치 펌웨어와 함께 확인한다.
+실선은 코드에 있는 경로를 뜻하며, 실제 Pi·센서·단말을 연결한 통합 시험 결과는 아래에 따로 기록한다. PR #14의 RiskEngine 작업본은 radar MQTT notification 입력과 MQTT `events` 출력을 제공한다. 별도 엔진 변경은 SAFE·WARNING·DANGER 판정에서 `fusedTracks/la`를 HTTP GET하며, `events`·`alert`를 MQTT로 쓰는 혼합 경로를 Pi 시험 CNT에서 확인했다. 레이더·Vision 데이터는 모의였고 작업자 단말은 연결하지 않았다. 저장소에는 HTTP와 MQTT 경보 수신 코드가 모두 있으므로 작업자 단말의 실제 SUB 바인딩은 설치 펌웨어와 함께 확인한다.
 
 #### 등록 및 리소스 사전조건
 
@@ -174,7 +174,7 @@ sequenceDiagram
 
 `radar`에는 대상이 최대 3개인 CIN을 저장한다. 현재 `main`의 RiskEngine MVP는 `events`를 작성하고 별도 `alert`는 작성하지 않지만, #14를 기반으로 한 이 엔진 Draft PR은 시험용 alert CNT 기록과 MQTT SUB 알림을 확인했다. 현재 `main`의 레이더 업로더는 `LOCAL_DECISION=True`가 기본이다. 실제 작업자 경보 경로로 전환하기 전까지 운영 alert CNT의 작성자는 한 번에 하나로 유지한다.
 
-Vision은 `AE-VisionAI/fusedTracks`에 결과를 기록하는 코드가 있다. 이 엔진 Draft PR은 레이더 판정이 SAFE일 때 최신 fusedTracks CIN을 HTTP GET하고, 신선한 `cam_ok=true`, `radar_ok=true` 결과의 `camera_only + raise`만 WARNING으로 올린다. Pi 모의 시험은 `radar_ok` 필수 조건을 추가하기 전에 수행했으며, 변경된 조건과 실제 VisionAI 생산자 연결, 작업자 식별 매핑은 미검증이다. Vision의 `ghost_suspect`를 사람 부재의 확정으로 취급하지 않는다.
+Vision은 `AE-VisionAI/fusedTracks`에 결과를 기록하는 코드가 있다. 이 엔진 Draft PR은 레이더 SAFE·WARNING·DANGER 입력에서 최신 fusedTracks CIN을 HTTP GET하고, 신선한 `cam_ok=true`, `radar_ok=true` 결과의 `camera_only + raise`는 SAFE를 WARNING으로, 조건에 맞는 `confirmed` 위험 자세는 WARNING을 DANGER로 올린다. 유령 낮추기는 기본 비활성이다. Pi 모의 시험은 `radar_ok` 필수 조건을 추가하기 전에 수행했으며, 변경된 조건과 실제 VisionAI 생산자 연결, 작업자 식별 매핑은 미검증이다. Vision의 `ghost_suspect`를 사람 부재의 확정으로 취급하지 않는다.
 
 ## 통신과 시험 결과
 

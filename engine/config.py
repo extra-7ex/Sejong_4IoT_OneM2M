@@ -27,6 +27,11 @@ class RiskConfig:
     stale_after_s: float = 1.0
     target_loss_grace_s: float = 1.0
     max_target_jump_m: float = 2.5
+    release_hold_s: float = 3.0
+    vision_lower_max_age_s: float = 1.0
+    vision_ghost_min_distance_m: float = 1.0
+    vision_match_tolerance_m: float = 0.5
+    vision_ghost_lower_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "RiskConfig":
@@ -42,6 +47,11 @@ class RiskConfig:
             stale_after_s=_env_float("RISK_STALE_AFTER_S", 1.0),
             target_loss_grace_s=_env_float("RISK_TARGET_LOSS_GRACE_S", 1.0),
             max_target_jump_m=_env_float("RISK_MAX_TARGET_JUMP_M", 2.5),
+            release_hold_s=_env_float("RISK_RELEASE_HOLD_S", 3.0),
+            vision_lower_max_age_s=_env_float("VISION_LOWER_MAX_AGE_S", 1.0),
+            vision_ghost_min_distance_m=_env_float("VISION_GHOST_MIN_DISTANCE_M", 1.0),
+            vision_match_tolerance_m=_env_float("VISION_MATCH_TOLERANCE_M", 0.5),
+            vision_ghost_lower_enabled=os.getenv("VISION_GHOST_LOWER_ENABLED", "false").lower() == "true",
         )
 
 
