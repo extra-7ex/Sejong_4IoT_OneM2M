@@ -32,6 +32,7 @@ class DashboardTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         cfg = load_config()
         cfg["history_file"] = str(Path(self.tmp.name) / "events.jsonl")
+        cfg["fresh"] = False                                  # 기존 테스트는 전체 이력 기준
         self.cfg = cfg
         self.store = Store(cfg)
         self.client = FakeClient()
@@ -84,6 +85,7 @@ class InModeTest(unittest.TestCase):
         cfg = load_config()
         cfg["history_file"] = str(Path(self.tmp.name) / "events.jsonl")
         cfg["in_base"] = "http://in.example/TinyIoT"
+        cfg["fresh"] = False                                  # 기존 테스트는 전체 이력 기준
         self.cfg = cfg
         self.store = Store(cfg)
         self.client = FakeClient()
@@ -114,6 +116,13 @@ class InModeTest(unittest.TestCase):
         self.assertEqual(stats["hotspots"][0]["DANGER"], 1)
         self.assertFalse(Path(self.cfg["history_file"]).exists())             # IN 모드는 로컬 파일을 쓰지 않음
 
+    def test_duplicate_in_copies_of_same_mn_event_shown_once(self):
+        a = self.summary("x1", "DANGER", 1.0); a["con"]["mn_ri"] = "mn-7"
+        b = self.summary("x2", "DANGER", 1.0); b["con"]["mn_ri"] = "mn-7"
+        self.client.history = [a, b]
+        self.poller.poll_once()
+        self.assertEqual([r["ri"] for r in self.store.recent(10)], ["x1"])
+
     def test_mn_events_not_recorded_locally_in_in_mode(self):
         self.poller.poll_once()
         self.set_mn_event()
@@ -131,6 +140,53 @@ class InModeTest(unittest.TestCase):
         self.poller.poll_once()
         src = self.store.snapshot()["sources"]["vision_status"]
         self.assertEqual((src["state"], src["con"]["state"]), ("ok", "INACTIVE"))
+
+    def test_fresh_hides_old_in_history_and_shows_new(self):
+        import time
+        self.cfg["fresh"] = True
+        store = Store(self.cfg)
+        poller = Poller(self.cfg, store, self.client)
+        old = self.summary("old", "DANGER", store.started - 60, [[100, 900]])
+        self.client.history = [old]
+        self.client.responses[self.cfg["in_events_path"] + "/la"] = ("ok", unwrap_cin({"m2m:cin": old}))
+        poller.poll_once()
+        self.assertTrue(store.history_loaded)
+        self.assertEqual(store.recent(10), [])                                  # 실행 전 이력은 숨김
+        self.assertEqual(store.stats(3600)["counts"]["DANGER"], 0)
+        new = self.summary("new", "WARNING", time.time() + 1)
+        self.client.responses[self.cfg["in_events_path"] + "/la"] = ("ok", unwrap_cin({"m2m:cin": new}))
+        poller.poll_once()
+        self.assertEqual([r["ri"] for r in store.recent(10)], ["new"])
+        self.assertTrue(store.snapshot()["history"]["fresh"])
+
+
+    def test_reset_clears_screen_and_keeps_new(self):
+        import time
+        self.client.history = [self.summary("a", "DANGER", time.time() - 60)]
+        self.poller.poll_once()
+        self.assertEqual(len(self.store.recent(10)), 1)
+        self.store.reset()
+        self.assertEqual(self.store.recent(10), [])
+        self.assertEqual(self.store.stats(3600)["total"], 0)
+        self.client.responses[self.cfg["in_events_path"] + "/la"] = ("ok", unwrap_cin({"m2m:cin": self.summary("b", "SAFE", time.time() + 1)}))
+        self.poller.poll_once()
+        self.assertEqual([r["ri"] for r in self.store.recent(10)], ["b"])
+
+    def test_fresh_is_default(self):
+        import os
+        os.environ.pop("DASH_FRESH", None)
+        self.assertTrue(load_config()["fresh"])
+
+
+class FreshLocalTest(DashboardTest):
+    def test_fresh_skips_file_but_keeps_it(self):
+        self.poller.poll_once()
+        self.set("events_path", event_cin("e1", "DANGER", 1.0))
+        self.poller.poll_once()
+        self.cfg["fresh"] = True
+        again = Store(self.cfg)
+        self.assertEqual(again.recent(10), [])                                  # 화면에서는 비움
+        self.assertTrue(Path(self.cfg["history_file"]).read_text(encoding="utf-8").strip())  # 파일은 그대로
 
 
 if __name__ == "__main__":

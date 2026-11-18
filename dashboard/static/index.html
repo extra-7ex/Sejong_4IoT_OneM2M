@@ -52,6 +52,8 @@
   #vis.v-down { color: #fff; background: var(--danger); border-color: var(--danger); font-size: 16px; }
   #vis.v-unknown { color: var(--warn); border-color: rgba(242,165,22,.45); }
   select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  #reset-btn { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  #reset-btn:disabled { opacity: .5; cursor: default; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } .metrics { gap: 16px; } #banner { flex-wrap: wrap; } }
 </style>
 </head>
@@ -107,7 +109,8 @@
       <div class="muted" style="margin-top:8px;font-size:12px" id="stats-note"></div>
     </section>
     <section class="panel">
-      <h2>위험 이벤트 기록 <span class="muted" style="text-transform:none;letter-spacing:0" id="log-src"></span></h2>
+      <h2>위험 이벤트 기록 <span class="muted" style="text-transform:none;letter-spacing:0" id="log-src"></span>
+        <button id="reset-btn" type="button" style="float:right">화면 초기화</button></h2>
       <div id="log-wrap"><table><thead><tr><th>시각</th><th>상태</th><th>거리</th><th>t<sub>cpa</sub></th><th>사유</th></tr></thead>
         <tbody id="log"></tbody></table></div>
     </section>
@@ -176,7 +179,8 @@ function renderState(s) {
   $('radar-age').className = ra == null || ra > 2 ? 'warnline' : 'muted';
 
   const inMode = s.history?.mode === 'IN';
-  $('log-src').textContent = inMode ? `· IN-CSE ${s.config.in_events_path}${s.history.loaded ? '' : ' (불러오는 중)'}` : '· 이 대시보드가 실행 중에 기록';
+  const freshTxt = s.history?.fresh ? ` · ${new Date(s.history.since * 1000).toLocaleTimeString('ko-KR', { hour12: false })} 이후만` : '';
+  $('log-src').textContent = (inMode ? `· IN-CSE ${s.config.in_events_path}${s.history.loaded ? '' : ' (불러오는 중)'}` : '· 이 대시보드가 실행 중에 기록') + freshTxt;
   const keys = inMode ? ['radar', 'events', 'fused', 'vision_status', 'alert', 'in_events'] : ['radar', 'events', 'fused', 'vision_status', 'alert'];
   $('sources').innerHTML = keys.map(k => {
     const src = s.sources[k] || {}; const st = src.state || 'init';
@@ -242,7 +246,7 @@ async function refreshSlow() {
     const [events, stats] = await Promise.all([getJSON('/api/events?limit=100'), getJSON('/api/stats?hours=' + hours)]);
     $('log').innerHTML = events.length ? events.map(e => `<tr><td>${whenStr(e.seen_at)}</td><td class="${esc(e.status)}">${esc(e.status)}</td>
       <td>${fmt(e.distance_m, 'm')}</td><td>${fmt(e.t_cpa_s, 's', 1)}</td><td class="reason">${esc(e.reason)}</td></tr>`).join('')
-      : `<tr><td colspan="5" class="muted">${latest?.history?.mode === 'IN' ? 'IN-CSE에 쌓인 이벤트가 없음 (브리지 실행 확인)' : '대시보드 실행 후 기록된 이벤트가 없음'}</td></tr>`;
+      : `<tr><td colspan="5" class="muted">${latest?.history?.fresh ? '새로 시작 이후 이벤트가 아직 없음' : latest?.history?.mode === 'IN' ? 'IN-CSE에 쌓인 이벤트가 없음 (브리지 실행 확인)' : '대시보드 실행 후 기록된 이벤트가 없음'}</td></tr>`;
     const max = Math.max(1, ...Object.values(stats.counts));
     $('bars').innerHTML = ['DANGER', 'WARNING', 'UNKNOWN', 'SAFE'].map(k => `<div class="bar"><span class="${k}">${k}</span>
       <div class="track"><div class="fill" style="width:${100 * stats.counts[k] / max}%;background:${COLORS[k]}"></div></div><span>${stats.counts[k]}</span></div>`).join('');
@@ -259,6 +263,11 @@ async function refreshFast() {
 
 $('range').onchange = refreshSlow;
 refreshFast(); refreshSlow();
+$('reset-btn').onclick = async () => {
+  const btn = $('reset-btn'); btn.disabled = true;
+  try { await fetch('/api/reset', { method: 'POST' }); await refreshSlow(); await refreshFast(); }
+  finally { btn.disabled = false; }
+};
 setInterval(refreshFast, 500); setInterval(refreshSlow, 3000);
 </script>
 </body>
