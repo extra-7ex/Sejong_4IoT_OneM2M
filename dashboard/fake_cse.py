@@ -2,6 +2,7 @@
 
 사람 1명이 지게차 쪽으로 다가왔다 멀어지는 상황을 반복한다.
 radar/la, events/la(상태가 바뀔 때만 새 CIN), fusedTracks/la, CSEBase GET에 응답한다.
+60초마다 마지막 20초는 VisionAI가 멈춘 상황이다: fusedTracks가 갱신되지 않고, 5초 뒤 IPE 상태가 INACTIVE가 된다.
 
     python -m dashboard.fake_cse --port 3900
     DASH_CSE_BASE=http://127.0.0.1:3900/TinyIoT-MN python -m dashboard.server
@@ -42,9 +43,19 @@ def current() -> dict:
         STATE["events"].append({"ri": f"cin-ev{STATE['seq']}", "ct": time.strftime("%Y%m%dT%H%M%S"),
                                 "con": json.dumps(con)})
     radar = {"ri": f"cin-r{int(now * 10)}", "con": json.dumps({"ts": round(now, 2), "targets": [{"x": round(x), "y": round(y), "v": round(v)}]})}
-    fused = {"ri": f"cin-f{int(now * 10)}", "con": {"ts": now, "cam_ok": True, "tracks": [
+    phase = (now - T0) % 60
+    down_for = phase - 40 if phase >= 40 else None          # VisionAI가 멈춘 지 몇 초인지
+    fused_ts = now - down_for if down_for is not None else now
+    inactive = down_for is not None and down_for >= 5
+    # IPE처럼 상태가 바뀔 때와 10초마다 새 CIN(새 ri)
+    vision_status = {"ri": f"cin-s{'i' if inactive else 'a'}{int(now // 10)}", "con": json.dumps({
+        "service": "safezone-vision", "state": "INACTIVE" if inactive else "ACTIVE",
+        "reason": f"stale {down_for:.1f}s" if inactive else "fresh", "fails": 3 if inactive else 0,
+        "since": round(now - down_for + 5 if inactive else now, 2), "ts": round(now, 2), "probe": "cin"})}
+    fused = {"ri": f"cin-f{int(fused_ts * 10)}", "con": {"ts": fused_ts, "cam_ok": True, "tracks": [
         {"id": 0, "state": "confirmed", "x": round(x / 1000 + 0.05, 2), "y": round(y / 1000 - 0.05, 2), "posture": "standing"}]}}
-    return {"radar": radar, "fused": fused, "events": STATE["events"][-1] if STATE["events"] else None}
+    return {"radar": radar, "fused": fused, "vision_status": vision_status,
+            "events": STATE["events"][-1] if STATE["events"] else None}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -59,6 +70,8 @@ class Handler(BaseHTTPRequestHandler):
             body = {"m2m:cin": cur["radar"]}
         elif path.endswith("/fusedTracks/la"):
             body = {"m2m:cin": cur["fused"]}
+        elif path.endswith("/MecServices/safezone-vision/status/la"):
+            body = {"m2m:cin": cur["vision_status"]}
         elif path.endswith("/events/la") and cur["events"]:
             body = {"m2m:cin": cur["events"]}
         elif path.count("/") == 1:
