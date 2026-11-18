@@ -45,11 +45,14 @@ class OneM2MHTTP:
             raise RuntimeError(f"CIN GET for {path} did not return JSON") from exc
 
     def create_event_cin(self, event: dict) -> dict:
+        return self.create_cin(self.config["events_path"], event)
+
+    def create_cin(self, path: str, event: dict) -> dict:
         # con is intentionally a JSON string, matching alert_node.ino which accepts
         # both string and object forms. This avoids depending on a tinyIoT coercion.
         body = json.dumps({"m2m:cin": {"con": json.dumps(event, separators=(",", ":"))}}).encode("utf-8")
         status, headers, response_body = self._request(
-            "POST", self.config["events_path"], body, "application/json;ty=4",
+            "POST", path, body, "application/json;ty=4",
         )
         rsc = headers.get("X-M2M-RSC") or headers.get("x-m2m-rsc")
         if not 200 <= status < 300:
@@ -61,3 +64,18 @@ class OneM2MHTTP:
         except (UnicodeDecodeError, json.JSONDecodeError):
             response = {"raw_response": response_body[:300].decode("utf-8", errors="replace")}
         return {"http_status": status, "x_m2m_rsc": rsc, "response": response}
+
+
+class HTTPAlertWriter:
+    """Writes the engine's alert to an existing alert container over HTTP (e.g. /AE-forklift01/alert).
+
+    The forklift and worker nodes are subscribed to that container, so this is the real stop
+    path. Only one writer may own it: turn off the radar node's local decision
+    (RADAR_LOCAL_DECISION=0) before enabling this.
+    """
+
+    def __init__(self, http: OneM2MHTTP, path: str):
+        self.http, self.path = http, path
+
+    def create_event_cin(self, alert: dict) -> dict:
+        return self.http.create_cin(self.path, alert)

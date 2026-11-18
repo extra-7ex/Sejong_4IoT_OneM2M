@@ -24,7 +24,9 @@ SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/serial0')
 ORIGIN = 'Cforklift01'
 
 UPLOAD_INTERVAL = 0.5    # radar 업로드 최소 간격 (초)
-LOCAL_DECISION = True    # 위험 판단 엔진 완성 전까지 임시로 alert 직접 기록
+# True: 이 노드가 거리만 보고 alert를 직접 기록 (기본). False: 위험 엔진이 alert를 기록한다
+# (엔진을 --alert-path /AE-forklift01/alert로 켤 때 RADAR_LOCAL_DECISION=0. alert 작성자는 하나만 둔다)
+LOCAL_DECISION = os.getenv('RADAR_LOCAL_DECISION', '1') != '0'
 WARN_MM = 1000           # warn 거리 (mm): 경보만
 DANGER_MM = 500          # danger 거리 (mm): 경보 + 지게차 정지
 RANK = {'safe': 0, 'warn': 1, 'danger': 2}

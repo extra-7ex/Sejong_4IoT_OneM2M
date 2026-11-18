@@ -10,7 +10,7 @@ import time
 from typing import Any
 
 from .config import RiskConfig, one_m2m_config
-from .onem2m_http import OneM2MHTTP
+from .onem2m_http import HTTPAlertWriter, OneM2MHTTP
 from .risk_engine import InputError, RiskEngine, normalize_radar_cin
 from .mqtt_events import UncertainWriteError
 from .vision_advice import assess as assess_vision
@@ -194,6 +194,8 @@ def main() -> None:
     parser.add_argument("--mqtt-client-id", help="Unique broker client ID (default: random)")
     parser.add_argument("--mqtt-events", action="store_true", help="Publish events with oneM2M MQTT binding")
     parser.add_argument("--mqtt-alert-path", help="Explicit pre-existing test worker alert container path")
+    parser.add_argument("--alert-path", help="Write the real alert over HTTP to this existing container "
+                        "(e.g. /AE-forklift01/alert). Run the radar node with RADAR_LOCAL_DECISION=0 so it is the only writer")
     parser.add_argument("--vision-path", help="Optional fusedTracks latest-CIN path for the agreed camera_only+raise rule")
     parser.add_argument("--mqtt-cse-id", help="CSE ID without leading slash (required with --mqtt-events)")
     parser.add_argument("--mqtt-max-queue-age", type=float, default=3.0)
@@ -201,6 +203,9 @@ def main() -> None:
 
     if args.mqtt_alert_path and (not args.mqtt_events or not args.mqtt_alert_path.startswith("/") or args.mqtt_alert_path.endswith("/")):
         parser.error("--mqtt-alert-path requires --mqtt-events and an absolute container path")
+
+    if args.alert_path and (args.mqtt_alert_path or not args.alert_path.startswith("/") or args.alert_path.endswith("/")):
+        parser.error("--alert-path needs an absolute container path and cannot be combined with --mqtt-alert-path")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cse_config = one_m2m_config()
@@ -223,8 +228,12 @@ def main() -> None:
             except Exception:
                 event_writer.close()
                 raise
+    http = OneM2MHTTP(cse_config)
+    if args.alert_path:
+        alert_writer = HTTPAlertWriter(http, args.alert_path)
+        LOG.info("engine writes the real alert to %s (radar node must run with RADAR_LOCAL_DECISION=0)", args.alert_path)
     app = RiskApplication(
-        OneM2MHTTP(cse_config), RiskEngine(RiskConfig.from_env()), event_writer, alert_writer,
+        http, RiskEngine(RiskConfig.from_env()), event_writer, alert_writer,
         vision_path=args.vision_path or cse_config["vision_path"],
         vision_max_age_s=float(cse_config["vision_max_age_s"]),
         vision_future_skew_s=float(cse_config["vision_future_skew_s"]),

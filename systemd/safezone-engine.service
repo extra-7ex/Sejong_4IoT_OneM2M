@@ -11,6 +11,7 @@ WorkingDirectory=/home/<PI_USER>/Sejong_4IoT_OneM2M
 Environment=ONEM2M_ORIGIN=CAdmin
 Environment="ENGINE_ARGS=--transport polling --vision-path /AE-VisionAI/fusedTracks/la"
 # 값을 바꾸려면 /etc/default/safezone에 같은 이름으로 적는다 (예: ENGINE_ARGS=--transport polling)
+# 엔진이 지게차 alert를 쓰게 하려면 시연방법.md E절 (ENGINE_ARGS에 --alert-path, 레이더는 RADAR_LOCAL_DECISION=0)
 EnvironmentFile=-/etc/default/safezone
 ExecStart=/usr/bin/python3 -m engine.main $ENGINE_ARGS
 Restart=always

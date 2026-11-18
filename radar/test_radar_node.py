@@ -76,8 +76,8 @@ def fake_serial_module(script):
     return module
 
 
-def run_node(script):
-    env = {"TRANSPORT": "http", "CSE_URL": "http://127.0.0.1:9/x", "RADAR_STALE_S": "0.3"}
+def run_node(script, **extra_env):
+    env = {"TRANSPORT": "http", "CSE_URL": "http://127.0.0.1:9/x", "RADAR_STALE_S": "0.3", **extra_env}
     out = io.StringIO()
     with patch.dict(os.environ, env), patch.dict(sys.modules, {"serial": fake_serial_module(script)}), \
             patch("subprocess.check_output", return_value=b"127.0.0.1\n"), contextlib.redirect_stdout(out):
@@ -94,6 +94,11 @@ class RadarNodeUnknownTest(unittest.TestCase):
         self.assertEqual(alerts[:4], ["safe", "danger", "unknown", "danger"], log)
         self.assertIn("레이더 끊김", log)
         self.assertIn("레이더 복구", log)
+
+    def test_engine_mode_writes_no_alert(self):
+        # 엔진이 alert를 쓰는 모드에서는 이 노드가 alert를 쓰지 않는다 (작성자는 하나)
+        alerts, log = run_node([frame(0, 400), ("gap", 0.6), frame()], RADAR_LOCAL_DECISION="0")
+        self.assertEqual(alerts, [], log)
 
     def test_no_radar_at_start_is_unknown(self):
         alerts, _ = run_node([("gap", 0.6)])
