@@ -12,6 +12,8 @@ Environment=ONEM2M_ORIGIN=CAdmin
 # Pi의 tinyIoT가 가끔 1–2초 멈춘다(11/19 실측). 그 사이에 요청이 끊기거나 UNKNOWN(지게차 정지)이 나지 않게
 Environment=ONEM2M_HTTP_TIMEOUT_S=3
 Environment=RISK_STALE_AFTER_S=3
+# 레이더는 0.5초마다 오지만 tinyIoT 지연으로 간격이 0.75초를 넘으면 같은 사람인지 확신하지 못해 UNKNOWN이 났다
+Environment=RISK_MAX_SAMPLE_INTERVAL_S=1.5
 Environment="ENGINE_ARGS=--transport polling --vision-path /AE-VisionAI/fusedTracks/la"
 # 값을 바꾸려면 /etc/default/safezone에 같은 이름으로 적는다 (예: ENGINE_ARGS=--transport polling)
 # 엔진이 지게차 alert를 쓰게 하려면 시연방법.md E절 (ENGINE_ARGS에 --alert-path, 레이더는 RADAR_LOCAL_DECISION=0)
