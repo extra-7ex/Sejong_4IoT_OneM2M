@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""가상 레이더: radar_node.py와 같은 형식으로 AE-forklift01/radar에 10Hz 업로드 (레이더 없이 엔진 시험용)
+"""가상 레이더: radar_node.py와 같은 형식으로 AE-forklift01/radar에 2Hz 업로드 (레이더 없이 엔진 시험용)
+
+실제 레이더 노드와 같은 0.5초 간격이다. 10Hz로 올리면 Pi의 tinyIoT가 밀려 저장이 10초 넘게 늦어진다(11/19 실측).
 
 기본은 MQTT. TRANSPORT=http로 예전 방식. 주소·이름은 radar_node.py와 같은 환경 변수를 쓴다.
 """
@@ -11,7 +13,7 @@ CSE_NAME = os.getenv('CSE_NAME', 'TinyIoT-MN')
 CSE_RI = os.getenv('CSE_RI', 'tinyiot-mn')
 CSE = os.getenv('CSE_URL', f'http://{PI_IP}:3000/{CSE_NAME}')
 MQTT_HOST = os.getenv('MQTT_HOST', '127.0.0.1')
-HZ = 10
+HZ = float(os.getenv('SIM_RADAR_HZ', '2'))   # radar_node.py UPLOAD_INTERVAL 0.5초와 같게
 
 if TRANSPORT == 'mqtt':
     from onem2m_mqtt import OneM2MMqtt
