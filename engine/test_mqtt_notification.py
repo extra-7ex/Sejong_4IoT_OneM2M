@@ -9,6 +9,9 @@ from engine.main import RiskApplication
 from engine.mqtt_notification import MQTTNotifications
 from engine.risk_engine import RiskEngine
 
+# 이 시험의 거리 값은 11/19 이전 기준(3.0/1.5 m, CPA 1.0 m)으로 짜여 있다. 판단 로직 시험이므로 기준을 고정한다.
+LEGACY = dict(warning_distance_m=3.0, danger_distance_m=1.5, cpa_radius_m=1.0)
+
 
 class FakeCSE:
     def __init__(self):
@@ -27,7 +30,7 @@ def packet(ri="id-1", x=2000):
 class MQTTNotificationTests(unittest.TestCase):
     def setUp(self):
         self.cse = FakeCSE()
-        self.app = RiskApplication(self.cse, RiskEngine(RiskConfig()))
+        self.app = RiskApplication(self.cse, RiskEngine(RiskConfig(**LEGACY)))
         self.rx = MQTTNotifications(self.app, "127.0.0.1", 1883, "/oneM2M/req/test/engine/json")
 
     def deliver(self, payload, retain=False):
@@ -77,7 +80,7 @@ class MQTTNotificationTests(unittest.TestCase):
         # The release hold is off here; test_vision_advice covers the 3 s SAFE hold.
         now = [10.0]
         cse = FakeCSE()
-        app = RiskApplication(cse, RiskEngine(RiskConfig(release_hold_s=0), clock=lambda: now[0]))
+        app = RiskApplication(cse, RiskEngine(RiskConfig(release_hold_s=0, **LEGACY), clock=lambda: now[0]))
         rx = MQTTNotifications(app, "127.0.0.1", 1883, "/test")
 
         def send(ri, targets):

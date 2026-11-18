@@ -3,6 +3,9 @@ import unittest
 from engine.config import RiskConfig
 from engine.risk_engine import InputError, RiskEngine, normalize_radar_cin
 
+# 이 시험의 거리 값은 11/19 이전 기준(3.0/1.5 m, CPA 1.0 m)으로 짜여 있다. 판단 로직 시험이므로 기준을 고정한다.
+LEGACY = dict(warning_distance_m=3.0, danger_distance_m=1.5, cpa_radius_m=1.0)
+
 
 def cin(ri, ts, targets):
     return {"m2m:cin": {"ri": ri, "con": {"ts": ts, "targets": targets}}}
@@ -33,11 +36,11 @@ class NormalizationTests(unittest.TestCase):
 
 class RiskTests(unittest.TestCase):
     def setUp(self):
-        self.engine = RiskEngine(RiskConfig())
+        self.engine = RiskEngine(RiskConfig(**LEGACY))
 
     def test_distance_levels_and_boundary_priority(self):
         def classify(x_mm):
-            return RiskEngine(RiskConfig()).process_message(
+            return RiskEngine(RiskConfig(**LEGACY)).process_message(
                 cin("threshold", 1, [{"x": x_mm, "y": 0}]), 1
             )["status"]
         self.assertEqual(classify(3000), "WARNING")
@@ -98,6 +101,27 @@ class RiskTests(unittest.TestCase):
         result = self.engine.process_message(cin("b", 2, [{"x": 2000, "y": 0}]), 2.0)
         self.assertEqual(result["status"], "WARNING")
         self.assertFalse(result["cpa_valid"])
+
+
+class DemoThresholdTests(unittest.TestCase):
+    """관제 화면(엔진)과 실제 정지(지게차 노드)가 같은 거리 기준을 써야 영상에서 어긋나지 않는다."""
+
+    def test_default_thresholds_match_the_forklift_node(self):
+        import re
+        from pathlib import Path
+        src = (Path(__file__).resolve().parents[1] / "radar" / "radar_node.py").read_text(encoding="utf-8")
+        warn_mm = int(re.search(r"^WARN_MM\s*=\s*(\d+)", src, re.M).group(1))
+        danger_mm = int(re.search(r"^DANGER_MM\s*=\s*(\d+)", src, re.M).group(1))
+        config = RiskConfig()
+        self.assertEqual(config.warning_distance_m * 1000, warn_mm)
+        self.assertEqual(config.danger_distance_m * 1000, danger_mm)
+
+    def test_default_distance_levels(self):
+        def classify(x_mm):
+            return RiskEngine(RiskConfig()).process_message(cin("d", 1, [{"x": x_mm, "y": 0}]), 1)["status"]
+        self.assertEqual(classify(1200), "SAFE")
+        self.assertEqual(classify(1000), "WARNING")
+        self.assertEqual(classify(500), "DANGER")
 
 
 if __name__ == "__main__":

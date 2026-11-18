@@ -82,7 +82,7 @@ AE-riskengine/events에 이벤트 CIN 등록
 
 ## 판정 의미와 상태 규칙
 
-- 현재 거리 기준은 warning `3.0 m`, danger `1.5 m`다. 이 값은 시연용 초기 가설이며 산업안전 기준이 아니다.
+- 현재 거리 기준은 warning `1.0 m`, danger `0.5 m`다(11/19, 지게차 노드 `radar_node.py`의 `WARN_MM`·`DANGER_MM`과 통일). 예측 최근접 반경도 `0.5 m`다. 이 값은 시연용 초기 가설이며 산업안전 기준이 아니다.
 - `t_cpa_s`는 일정한 상대속도가 유지된다고 가정했을 때 **최근접 위치에 도달하는 시각**이다. 위험 반경에 **처음 진입하는 시각**이 아니다.
 - `d_cpa_m`는 `t_cpa_s` 시점의 예측 최소 거리다. MVP는 `d_cpa_m`가 임시 CPA 반경 `1.0 m` 안이고 최근접 시각이 warning `3.0 s` / danger `1.5 s` 이내일 때 CPA 경고를 낸다. 위험 반경 최초 진입 시각은 계산하지 않는다.
 - 위험도 우선순위는 `DANGER > WARNING > UNKNOWN > SAFE`다. 직접 거리 위험은 속도 추정이 안 되어도 판정한다.
@@ -135,9 +135,9 @@ python -m engine.main --transport notification --listen 0.0.0.0 --port 8081
 | `ONEM2M_EVENTS_PATH` | `/AE-riskengine/events` | 이벤트 CNT 경로 |
 | `ONEM2M_ORIGIN` / `ONEM2M_RVI` | `Criskengine` / `3` | oneM2M Origin / Release Version |
 | `ONEM2M_POLL_INTERVAL_S` / `ONEM2M_HTTP_TIMEOUT_S` | `0.1` / `1.0` | polling 주기 / HTTP timeout |
-| `RISK_WARNING_DISTANCE_M` / `RISK_DANGER_DISTANCE_M` | `3.0` / `1.5` | 가설적 현재 거리 기준 |
+| `RISK_WARNING_DISTANCE_M` / `RISK_DANGER_DISTANCE_M` | `1.0` / `0.5` | 가설적 현재 거리 기준 |
 | `RISK_WARNING_TTC_S` / `RISK_DANGER_TTC_S` | `3.0` / `1.5` | 가설적 최근접 시각 기준 (`t_cpa_s`) |
-| `RISK_CPA_RADIUS_M` / `RISK_CPA_HORIZON_S` | `1.0` / `3.0` | 가설적 최근접 거리 / 예측 범위 |
+| `RISK_CPA_RADIUS_M` / `RISK_CPA_HORIZON_S` | `0.5` / `3.0` | 가설적 최근접 거리 / 예측 범위 |
 | `RISK_MIN_SPEED_MPS` | `0.05` | 이보다 느리면 CPA 무효 |
 | `RISK_MAX_SAMPLE_INTERVAL_S` | `0.75` | 이보다 긴 수신 간격이면 속도·CPA 무효 |
 | `RISK_STALE_AFTER_S` | `1.0` | 새 CIN 부재 시 UNKNOWN 전환 시간 |

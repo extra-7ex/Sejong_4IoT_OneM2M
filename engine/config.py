@@ -16,11 +16,12 @@ def _env_float(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class RiskConfig:
-    warning_distance_m: float = 3.0
-    danger_distance_m: float = 1.5
+    # 지게차 노드(radar_node.py WARN_MM·DANGER_MM)와 같은 기준. 관제 화면과 실제 정지가 어긋나지 않게 한다.
+    warning_distance_m: float = 1.0
+    danger_distance_m: float = 0.5
     warning_ttc_s: float = 3.0
     danger_ttc_s: float = 1.5
-    cpa_radius_m: float = 1.0
+    cpa_radius_m: float = 0.5
     cpa_horizon_s: float = 3.0
     min_speed_mps: float = 0.05
     max_sample_interval_s: float = 0.75
@@ -35,11 +36,11 @@ class RiskConfig:
     @classmethod
     def from_env(cls) -> "RiskConfig":
         return cls(
-            warning_distance_m=_env_float("RISK_WARNING_DISTANCE_M", 3.0),
-            danger_distance_m=_env_float("RISK_DANGER_DISTANCE_M", 1.5),
+            warning_distance_m=_env_float("RISK_WARNING_DISTANCE_M", 1.0),
+            danger_distance_m=_env_float("RISK_DANGER_DISTANCE_M", 0.5),
             warning_ttc_s=_env_float("RISK_WARNING_TTC_S", 3.0),
             danger_ttc_s=_env_float("RISK_DANGER_TTC_S", 1.5),
-            cpa_radius_m=_env_float("RISK_CPA_RADIUS_M", 1.0),
+            cpa_radius_m=_env_float("RISK_CPA_RADIUS_M", 0.5),
             cpa_horizon_s=_env_float("RISK_CPA_HORIZON_S", 3.0),
             min_speed_mps=_env_float("RISK_MIN_SPEED_MPS", 0.05),
             max_sample_interval_s=_env_float("RISK_MAX_SAMPLE_INTERVAL_S", 0.75),

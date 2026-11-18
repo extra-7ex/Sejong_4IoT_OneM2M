@@ -7,6 +7,9 @@ from engine.config import RiskConfig
 from engine.main import RiskApplication
 from engine.risk_engine import RiskEngine
 
+# 이 시험의 거리 값은 11/19 이전 기준(3.0/1.5 m, CPA 1.0 m)으로 짜여 있다. 판단 로직 시험이므로 기준을 고정한다.
+LEGACY = dict(warning_distance_m=3.0, danger_distance_m=1.5, cpa_radius_m=1.0)
+
 
 class Writer:
     def __init__(self):
@@ -26,7 +29,7 @@ class AlertUnknownTest(unittest.TestCase):
     def test_stale_radar_writes_unknown_alert_and_fresh_radar_clears_it(self):
         now = [10.0]
         events, alerts = Writer(), Writer()
-        engine = RiskEngine(RiskConfig(release_hold_s=0), clock=lambda: now[0])
+        engine = RiskEngine(RiskConfig(release_hold_s=0, **LEGACY), clock=lambda: now[0])
         app = RiskApplication(None, engine, events, alerts)
 
         app.accept_message(radar("a", [{"slot": 0, "x": 1000, "y": 0}]), now[0], dedupe=True)
