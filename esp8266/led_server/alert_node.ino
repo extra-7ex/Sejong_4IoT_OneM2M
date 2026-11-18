@@ -7,8 +7,8 @@
 #define PIN_SERVO  14   // D5
 #define PIN_BUZZER 12   // D6
 
-const int CENTER = 90;   // 포크가 수평일 때 각도
-const int SWING  = 20;   // 위아래 흔들 폭 (±20°, 30 넘기지 말 것)
+const int CENTER = 0;   // 포크가 수평일 때 각도
+const int SWING  = 30;   // 위아래 흔들 폭 (±20°, 30 넘기지 말 것)
 const int MIN_DEG = CENTER - SWING, MAX_DEG = CENTER + SWING;
 const int STEP_DEG = 2;                  // 한 번에 움직이는 각도
 const unsigned long STEP_MS = 15;        // 움직이는 간격 (작을수록 빠름)
