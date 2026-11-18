@@ -1,4 +1,59 @@
 # SafeZone 위험판단 엔진 MVP
+## MQTT 알림 입출력 — Pi 격리 시험 확인
+
+### Vision 조언과 작업자 alert 시험
+
+`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`·`WARNING`·`DANGER`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다(`UNKNOWN`일 때는 조회하지 않고 그대로 둔다). 주기 타이머 폴링이 아니라 레이더 입력에 따른 조회다. Vision 입력이 없거나 오래됐거나 `cam_ok=false`이거나 유효하지 않으면 레이더 판정을 유지한다. 시계가 동기화됐다는 가정이 필요하다.
+
+| 규칙 | 조건 | 결과 |
+|---|---|---|
+| 카메라 단독 올리기 | 레이더 `SAFE`, Vision `ts` 3초 이내, `camera_only` + `raise` | `WARNING` |
+| 자세 올리기 | 레이더 `WARNING` 표적, 같은 슬롯(`radar_id`)이고 거리 차 0.5m 이내인 `confirmed` + `raise`, 자세 `crouching`·`lying`, Vision 3초 이내 | 그 표적 `DANGER` |
+| 유령 낮추기 | 레이더 `DANGER` 표적, 같은 슬롯이고 거리 차 0.5m 이내인 `ghost_suspect` + `lower_to_caution`, 표적 거리 1m 초과, Vision **1초** 이내 | 그 표적 `WARNING` (`SAFE`로는 내리지 않음) |
+
+표적마다 조정한 뒤 가장 높은 단계를 최종 판정으로 쓴다. 다른 표적이 진짜 `DANGER`면 유령을 낮춰도 `DANGER`다. 직전 표적을 잃어 이전 위험을 유지 중인 표적(`held_previous_risk`)과 연결이 불확실한 표적은 조정하지 않는다. 조정 내용은 판정의 `vision_adjustments`, 레이더만의 판정은 `radar_status`에 남는다.
+
+**해제 지연:** `WARNING`·`DANGER`에서 `SAFE`로 내려갈 때는 `SAFE`가 3초 이어져야 내려간다(팀 규칙 "안전 상태 3초 유지 후 재가동"). 그동안은 직전 위험 단계를 `reason=release_hold_waiting_for_safe`로 유지한다. `DANGER`→`WARNING`과 모든 상향, `UNKNOWN`은 바로 반영한다. `UNKNOWN`이 끼면 SAFE 연속 시간은 처음부터 다시 센다. 주기 `tick()`은 레이더가 신선한 동안 Vision이 반영된 마지막 판정을 다시 쓰므로, Vision이 올린 단계를 레이더 단독 판정으로 되돌리지 않는다.
+
+| 환경 변수 | 기본값 | 의미 |
+|---|---|---|
+| `VISION_MAX_AGE_S` | 3.0 | 올리기에 쓰는 Vision 최대 나이 |
+| `VISION_LOWER_MAX_AGE_S` | 1.0 | 유령 낮추기에 쓰는 Vision 최대 나이 |
+| `VISION_GHOST_MIN_DISTANCE_M` | 1.0 | 이 거리 안의 표적은 낮추지 않음 |
+| `VISION_MATCH_TOLERANCE_M` | 0.5 | Vision 표적과 레이더 표적의 거리 차 허용 |
+| `VISION_FUTURE_SKEW_S` | 0.5 | Vision `ts`가 미래로 허용되는 오차 |
+| `RISK_RELEASE_HOLD_S` | 3.0 | `SAFE` 해제 지연 (0이면 끔) |
+
+위 규칙은 단위 시험(`engine/test_vision_advice.py`)으로만 확인했다. 실제 VisionAI fusedTracks와 실제 LD2450으로는 아직 시험하지 않았다.
+
+`--mqtt-events`와 `--mqtt-alert-path /AE-worker01/alert-test`를 함께 지정하면 미리 만든 단일 시험 작업자 CNT에 상태 변경 시 `level`, `dist`(mm), `ttc`(null)를 기록한다. alert 발행은 기본적으로 꺼져 있다. events와 alert는 각자 응답과 불확실 상태를 추적한다. 같은 상태의 결과가 불확실하면 자동 재전송하지 않는다.
+
+핵심 확인사항: 시험용 작업자 한 명의 경로를 명시한다. 이 시험은 그 한 작업자에게 전체 위험 상태를 전달하는 임시 전제를 쓴다. 레이더 표적과 작업자 ESP의 매핑은 미정이므로 실제 작업자에게 경보를 보내는 구성으로 간주하지 않는다. 현재 worker_node는 `unknown`을 무음으로 처리한다. 실제 수신과 부저를 검증할 때까지 기존 `LOCAL_DECISION`을 유지하고 운영 CNT의 작성자는 한 번에 하나로 둔다. 단말이 구독하는 경로와 시험 CNT는 일치해야 한다. 시험 ACP는 Pi에서 확인했지만 운영 ACP, 재접속 시 상태 동기화와 실제 장비 연동은 미검증이다.
+
+### Pi ARM64 통합 시험 결과 (2026-11-17)
+
+Pi의 `TinyIoT-MN`과 Mosquitto에서 운영 리소스와 분리된 시험 CNT를 사용했다. 레이더 CIN은 MQTT 요청으로 만든 모의 데이터였고, RiskEngine은 radar SUB 알림을 MQTT로 받았다. `events`와 `alert` CIN은 MQTT 요청으로 생성했으며, oneM2M 성공 응답 `rsc=2001`과 시험 리소스 조회를 확인했다. 별도 MQTT 관찰 구독은 alert 알림 5건을 받았다. 실제 ESP8266이나 부저를 사용한 것은 아니다.
+
+Vision도 실제 VisionAI 출력이 아니라 모의 `fusedTracks` CIN으로 시험했다. 시험 전용 ACP를 통해 `Criskengine`이 이 CNT를 읽었고, 테스트 CIN은 HTTP로 생성했다. 신선한 `camera_only + raise`는 Radar SAFE를 WARNING으로 올렸으며 raise가 없는 신선한 결과에서는 SAFE를 유지했다. 별도 연속 프레임으로 CPA WARNING(`t_cpa_s=2.5936`, `d_cpa_m=0`)과 DANGER(`t_cpa_s=0.9113`, `d_cpa_m=0`), 입력 만료 후 UNKNOWN을 확인했다. 한 첫 실행은 샘플 간격이 맞지 않아 WARNING만 확인했고, 간격을 제어해 재시험한 결과 DANGER를 확인했다.
+
+alert CIN은 기존 호환 형식인 `level`, `dist`(mm), `ttc`(null)를 쓴다. CPA 값은 `events`의 `t_cpa_s`와 `d_cpa_m`에서 확인한다. 실제 LD2450 업로더 입력, VisionAI의 실제 fusedTracks 생성, 운영 ACP, 작업자 ESP 수신, LED·부저, 재접속 후 상태 동기화는 검증하지 않았다. 실제 수신·부저 검증 전까지 기존 `LOCAL_DECISION`을 유지하고 운영 CNT의 작성자는 한 번에 하나로 둔다.
+
+시험 call flow는 레이더 CIN notification → 거리·CPA 판정 → (레이더 SAFE일 때) fusedTracks HTTP GET → events/alert MQTT CIN 생성 → 시험 구독자의 MQTT alert 알림이다. 이는 실제 장치 경보를 확인한 결과가 아니다.
+
+`--transport mqtt-notification`은 paho-mqtt 2.x와 정확한 `--mqtt-topic`을 요구한다. 현재 구현은 관찰된 tinyIoT의 직접 `m2m:sgn` JSON을 읽고 기존 radar 판정에 전달한다. SUB 리소스는 자동 생성하지 않으며, CSE의 SUB 및 브로커 토픽은 별도로 구성해야 한다. 실험 환경에서 `nu=mqtt://127.0.0.1:1883/CsafezoneNotify/json`은 `/oneM2M/req/safezone-mqtt-test/CsafezoneNotify/json`에 직접 `m2m:sgn`을 생성했다. 이는 해당 시험용 tinyIoT 버전의 동작이며 다른 버전도 같다고 단정하지 않는다.
+
+`--mqtt-events --mqtt-cse-id <슬래시 없는 ID>`를 함께 주면 events CIN 생성도 MQTT를 사용한다. 요청의 rqi를 응답과 대조하고 rsc=2001을 확인한다. 응답 timeout은 생성 여부를 알 수 없으므로 같은 상태를 자동 재시도하지 않고 오류를 기록한다. 다른 상태가 생기거나 운영자가 CSE를 확인해 해결하기 전에는 해당 상태의 저장 여부가 미확인이다. HTTP 출력을 계속 쓰려면 `--mqtt-events`를 생략한다.
+
+브로커가 끊어지면 UNKNOWN을 기록하고 재연결·재구독을 시도한다. 반복 CIN ri는 중복 판정하지 않으며 retained 및 오래 대기한 메시지를 거부한다. 수신 시각은 엔진 수신 monotonic 기준이며, 네트워크에서 오래 지연된 메시지를 모두 식별한다고 보장하지 않는다. 시험용 stale 값은 실제 속도 측정 후 결정해야 한다.
+
+실제 시험 CSE의 구독 검증 메시지는 rqi 없는 직접 `m2m:sgn`이었고 CSE는 앱 응답 없이 SUB를 생성했다. 본 어댑터는 이 검증 알림을 기록만 하며, 표준 oneM2M 검증 응답을 보내지 않는다. SUB 검증 응답·MQTT 접근 인증·TLS·timeout 후 저장 여부 확인 및 재처리 정책은 미구현/미검증이다.
+
+```bash
+python -m pip install -r engine/requirements-mqtt.txt
+python -m engine.main --transport mqtt-notification --mqtt-topic '<알림 토픽>' --mqtt-events --mqtt-cse-id '<CSE ID>'
+```
+
+
 
 ## 먼저 확인할 항목 — 실제 연결 전에 우선 처리
 
@@ -6,7 +61,7 @@
 > 아래 항목은 현재 코드가 실제 레이더·tinyIoT에 연결되어 검증되지 않아 남아 있는 전제다. 특히 **P0 두 항목을 확인하기 전에는 정상 복귀 동작이나 실제 장치 제어가 검증됐다고 보면 안 된다.**
 
 - [ ] **P0 · 레이더 CIN 실제 예시 확보:** 실행 중 tinyIoT의 `AE-forklift01/radar/la` 응답 한 건을 저장해 `ri`, `con`, `targets`, `x/y` 단위가 코드의 가정과 맞는지 확인한다. 현재 입력 경로와 필드 형식은 저장소 README 예시를 바탕으로 한 가정이다.
-- [ ] **P0 · 레이더가 빈 프레임도 계속 보내는지 확인:** 이 엔진은 새 CIN이 오지 않으면 stale `UNKNOWN`으로 바뀐다. 저장소 README에는 표적이 있을 때만 업로드한다고 적혀 있어, 사람이 화면에서 나가도 새 빈 프레임이 오지 않는다면 엔진은 `SAFE`로 복귀하지 않는다. `targets: []`를 포함한 주기적 heartbeat를 실제로 받을 수 있는지 확인하고, 아니면 레이더 업로더를 보완한다.
+- [ ] **P0 · 레이더가 빈 프레임도 계속 보내는지 확인:** 이 엔진은 새 CIN이 오지 않으면 stale `UNKNOWN`으로 바뀐다. 코드에 빈 프레임 전송이 추가됐지만 실제 장비에서 확인되지 않았다. 사람이 화면에서 나가도 새 빈 프레임이 오지 않는다면 엔진은 `SAFE`로 복귀하지 않는다. `targets: []`를 포함한 주기적 heartbeat를 실제로 받을 수 있는지 확인하고, 아니면 레이더 업로더를 보완한다.
 - [ ] **P1 · tinyIoT 입출력 확인:** RPi에서 `la` GET이 성공하는지와 `AE-riskengine/events` POST 후 CIN이 실제 생성되는지 응답 및 리소스 조회로 확인한다. HTTP 요청 성공 로그만으로 등록 검증을 끝내지 않는다.
 - [ ] **P1 · 제어 경로 확인:** 현재 MVP는 `events`에 판정 기록만 쓰며 모터·LED·부저 명령을 보내지 않는다. 장치 제어에는 alert CIN 작성 규칙과 SUB/notification 설정, `UNKNOWN` 때의 fail-safe 동작 확인이 추가로 필요하다.
 - [ ] **P2 · 좌표·표적 추적 조건 확인:** 표적 슬롯이 사람을 연속해서 가리키는지, 지게차 선회 시 레이더 좌표 회전을 어떻게 보정할지, 레이더 설치 오프셋과 차체 외곽을 어떻게 반영할지 확인한다.
@@ -96,3 +151,7 @@ python -m unittest engine.test_risk_engine -v
 ```
 
 현재 모의 CIN 단위 테스트 12개가 통과한다. 실제 LD2450 데이터, 실행 중 tinyIoT의 GET/POST, SUB 알림 전달, LED·부저·모터 동작은 이 테스트 범위에 포함되지 않는다.
+
+### 빈 프레임 MQTT 입력 모의 검증
+
+MQTT 콜백·알림 JSON과 모의 events 기록을 사용한 단위 시험에서 표적 DANGER → 0.5초 간격 빈 프레임 수신 시 유예 동안 DANGER 유지 → 빈 프레임 1초 유지 후 SAFE → 새 프레임이 1초 넘게 없으면 UNKNOWN을 확인했다. 이는 실제 브로커, tinyIoT 또는 레이더의 통합 시험이 아니다. 전체 엔진 단위 테스트 23개 통과. PR #13의 MQTT 업로더와 엔진을 독립 시험용 tinyIoT·Mosquitto에서 모의 직렬 프레임으로 연결했다. DANGER → 빈 프레임 유지 후 SAFE → 입력 중단 후 UNKNOWN 및 events CIN 조회를 확인했다. 시험에서는 관리자 Origin과 stale 2초를 사용했다. 공용 MN 권한과 실제 센서·장비는 미검증이다. slot이 같은 표적을 유지한다고 잠정 가정하며 실제 슬롯 연속성은 미검증이다.

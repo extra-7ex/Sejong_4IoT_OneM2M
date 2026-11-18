@@ -27,6 +27,10 @@ class RiskConfig:
     stale_after_s: float = 1.0
     target_loss_grace_s: float = 1.0
     max_target_jump_m: float = 2.5
+    release_hold_s: float = 3.0
+    vision_lower_max_age_s: float = 1.0
+    vision_ghost_min_distance_m: float = 1.0
+    vision_match_tolerance_m: float = 0.5
 
     @classmethod
     def from_env(cls) -> "RiskConfig":
@@ -42,6 +46,10 @@ class RiskConfig:
             stale_after_s=_env_float("RISK_STALE_AFTER_S", 1.0),
             target_loss_grace_s=_env_float("RISK_TARGET_LOSS_GRACE_S", 1.0),
             max_target_jump_m=_env_float("RISK_MAX_TARGET_JUMP_M", 2.5),
+            release_hold_s=_env_float("RISK_RELEASE_HOLD_S", 3.0),
+            vision_lower_max_age_s=_env_float("VISION_LOWER_MAX_AGE_S", 1.0),
+            vision_ghost_min_distance_m=_env_float("VISION_GHOST_MIN_DISTANCE_M", 1.0),
+            vision_match_tolerance_m=_env_float("VISION_MATCH_TOLERANCE_M", 0.5),
         )
 
 
@@ -51,6 +59,9 @@ def one_m2m_config() -> dict[str, str]:
         "cse_base": os.getenv("ONEM2M_CSE_BASE", "http://127.0.0.1:3000/TinyIoT-MN").rstrip("/"),
         "radar_path": os.getenv("ONEM2M_RADAR_PATH", "/AE-forklift01/radar/la"),
         "events_path": os.getenv("ONEM2M_EVENTS_PATH", "/AE-riskengine/events"),
+        "vision_path": os.getenv("ONEM2M_VISION_PATH", ""),
+        "vision_max_age_s": str(_env_float("VISION_MAX_AGE_S", 3.0)),
+        "vision_future_skew_s": str(_env_float("VISION_FUTURE_SKEW_S", 0.5)),
         "origin": os.getenv("ONEM2M_ORIGIN", "Criskengine"),
         "rvi": os.getenv("ONEM2M_RVI", "3"),
         "poll_interval_s": str(_env_float("ONEM2M_POLL_INTERVAL_S", 0.1)),
