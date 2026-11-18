@@ -102,3 +102,22 @@ WSL IP는 재부팅 때 바뀔 수 있으므로 부팅 후마다 2를 다시 실
 | MQTT `Invalid Request` | `m2m:rqp` 래퍼 사용 | 평평한 JSON으로 ([mqtt.md §3](../onem2m/mqtt.md)) |
 | MQTT `rsc:4004` | `to` 앞 슬래시 | `to`를 CSEBase 이름부터 |
 | CIN 생성 권한 오류 | `fr`이 AE를 만든 originator와 다름 | 같은 originator 사용, 다른 AE는 ACP 구성 |
+
+## 9. MEC 서비스 생존 확인 IPE
+
+AdvantEDGE의 MEC 011 구현은 liveness를 처리하지 않아 서비스가 죽어도 레지스트리에 `ACTIVE`로 남는다. `onem2m/mec_ipe.py`가 서비스를 직접 확인해 MN-CSE에 상태를 기록한다. 기본값은 VisionAI의 `fusedTracks/la`가 2초 안에 갱신되고 `cam_ok`가 false가 아닌지를 1초마다 본다. 3번 연속 실패하면 `INACTIVE`, 한 번 성공하면 `ACTIVE`다(멈춘 뒤 약 4–5초).
+
+```bash
+# 저장소 루트에서 (Pi)
+python3 -m onem2m.mec_ipe --once      # 한 번 확인·기록
+python3 -m onem2m.mec_ipe             # 계속 실행
+# 상태 확인
+curl -s -H 'X-M2M-Origin: CAdmin' -H 'X-M2M-RI: chk' -H 'X-M2M-RVI: 3' -H 'Accept: application/json' \
+  http://127.0.0.1:3000/TinyIoT-MN/AE-mecIPE/MecServices/safezone-vision/status/la
+```
+
+- 기록 위치: `AE-mecIPE/MecServices/<서비스>/status`. 상태가 바뀔 때와 10초마다 CIN을 쓴다. `la`의 `ts`가 30초 넘게 오래되면 IPE가 멈춘 것으로 보고 UNKNOWN으로 다룬다.
+- 다른 서비스: `IPE_SERVICE=<이름> IPE_PROBE=http://<주소>/health` (2xx면 성공) 또는 `IPE_PROBE=cin:/<AE>/<CNT>/la`.
+- MEC 레지스트리 반영(선택): `IPE_MEC_BASE=http://127.0.0.1:18080/safezone-a/mep-a/mec_service_mgmt/v1`이면 레지스트리 상태도 기록하고, `IPE_MEC_UPDATE=1`이면 판정을 레지스트리에 PUT해 MEC 쪽 가용성 알림이 나가게 한다.
+- 주요 환경 변수: `IPE_PERIOD_S`(1.0), `IPE_FAIL_N`(3), `IPE_MAX_AGE_S`(2.0), `IPE_HEARTBEAT_S`(10), `IPE_READ_ORIGIN`(CAdmin), `IPE_ORIGIN`(CmecIPE).
+- 시험: `python3 -m unittest onem2m.test_mec_ipe`
