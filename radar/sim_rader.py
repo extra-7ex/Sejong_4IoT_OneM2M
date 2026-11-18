@@ -30,9 +30,9 @@ def post(con):
 def scene(t):                                      # 30초 시나리오 반복
     t %= 30
     if t < 3:    return None                       # 아무도 없음
-    if t < 11:   y, v = 5000 - (t - 3) * 525, -52  # 5m → 0.8m 접근
-    elif t < 14: y, v = 800, 0                     # 0.8m에서 정지
-    elif t < 20: y, v = 800 + (t - 14) * 700, 70   # 멀어짐
+    if t < 11:   y, v = 5000 - (t - 3) * 575, -57  # 5m → 0.4m 접근 (1.0m 주의, 0.5m 위험을 지남)
+    elif t < 14: y, v = 400, 0                     # 0.4m에서 정지 (위험)
+    elif t < 20: y, v = 400 + (t - 14) * 767, 77   # 멀어짐
     else:        return None                       # 다시 아무도 없음
     return {'slot': 0, 'x': 200, 'y': round(y), 'v': v}
 
