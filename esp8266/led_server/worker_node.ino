@@ -6,7 +6,9 @@
 #include "secrets.h"                                   // WIFI_SSID, WIFI_PASS
 
 // ===== 설정 =====
-const String CSE_HOST = "http://192.168.219.103:3000";  // 팀 CSE (Pi)
+#ifndef CSE_HOST                                        // secrets.h에서 바꾼다 (핫스팟 등 네트워크가 바뀌면 Pi의 새 IP)
+#define CSE_HOST "http://192.168.219.103:3000"
+#endif
 const String CSE_NAME = "TinyIoT-MN";
 const String NODE     = "worker01";                     // 작업자 노드를 더 만들면 worker02, worker03 ...
 const String WRITERS[] = {"Criskengine", "CAdmin"};     // 이 노드의 alert에 기록할 수 있는 쪽
@@ -27,7 +29,7 @@ int m2m(const char* method, const String& path, int ty, const String& body) {
   WiFiClient wc;
   HTTPClient http;
   http.setTimeout(3000);
-  http.begin(wc, CSE_HOST + "/" + CSE_NAME + path);
+  http.begin(wc, String(CSE_HOST) + "/" + CSE_NAME + path);
   http.addHeader("X-M2M-Origin", ORIGIN);
   http.addHeader("X-M2M-RI", "r" + String(millis()));
   http.addHeader("X-M2M-RVI", "3");

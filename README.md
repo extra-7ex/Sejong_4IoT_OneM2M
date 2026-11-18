@@ -137,33 +137,23 @@ CIN의 `con`은 JSON 문자열일 수 있다. Vision의 `ttc_s`와 RiskEngine의
 
 ```text
 Sejong_4IoT_OneM2M/
-├─ README.md                    프로젝트 소개 
-├─ .gitignore
+├─ README.md                    프로젝트 소개
+├─ 시연방법.md                  시연 실행 절차 (Pi 한 대로 전체 파이프라인, 서비스, 엔진 경보 모드)
 ├─ docs/
-│  ├─ architecture.md           시스템 구성, 리소스 트리 상세
+│  ├─ architecture.md           시스템 구성, 리소스 트리, 호출 흐름
 │  ├─ data-format.md            컨테이너별 데이터 형식 (팀 합의 문서)
-│  └─ runbook.md                작업 재개 절차 (핫스팟 연결 → tinyIoT 실행)
-├─ onem2m/
-│  ├─ setup_onem2m.sh           AE·CNT 일괄 생성
-│  ├─ sub_alert_node.sh         ESP8266 알림 구독 생성
-│  └─ demo.sh                   시연용 조회·기록 스크립트
-├─ radar/                       레이더 파트
-│  ├─ README.md
-│  ├─ ld2450.py                 LD2450 프레임 파싱 테스트
-│  ├─ proximity.py              (초기 버전) 근접 경고 → ESP8266 직접 호출
-│  └─ radar_node.py             레이더 데이터·위험 상태를 tinyIoT에 업로드
-├─ camera/                      카메라 파트
-│  ├─ README.md
-│  └─ motion_detect.py          웹캠 모션 감지 → AE-camera01/detect
-├─ engine/                      위험 판단 엔진 (거리·CPA)
-│  └─ README.md
-└─ esp8266/
-   ├─ led_server/               (초기 버전) /on·/off 웹서버
-   │  ├─ led_server.ino
-   │  └─ secrets.example.h
-   └─ alert_node/               tinyIoT 구독 알림 수신 → 출력 제어
-      ├─ alert_node.ino
-      └─ secrets.example.h
+│  ├─ cse-naming.md             CSE·AE 이름 규칙
+│  └─ runbook.md                tinyIoT 운영, MEC 생존 확인 IPE
+├─ radar/                       레이더: LD2450 업로더(radar_node.py), 가상 레이더(sim_rader.py)
+├─ engine/                      위험 판단 엔진: 거리·CPA, 카메라 결합 규칙, SAFE 해제 지연
+├─ vision/                      VisionAI: 카메라 사람·자세 → 바닥 좌표 → 레이더와 결합 → fusedTracks (AGPL-3.0)
+├─ onem2m/                      MN→IN 브리지, MEC 생존 확인 IPE, 지연 측정, 구독·CSE 스크립트
+├─ dashboard/                   관제 대시보드 (MN 실시간, IN 이력, VisionAI 상태)
+├─ esp8266/                     지게차 노드(alert_node), 작업자 노드(worker_node), MQTT 판
+├─ systemd/                     시연 서비스 (safezone.target 아래 레이더·엔진·브리지·대시보드·IPE·VisionAI)
+├─ tools/preflight.py           시연 전 점검 (서비스·데이터·경보 작성자·죽은 구독)
+├─ experiments/mec011-host-a/   MEC 011 서비스 등록·발견 실험, oneM2M↔MEC 연동 AE
+└─ camera/                      (초기 버전) 웹캠 모션 감지
 ```
 
 Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식인 `secrets.example.h`만 올린다.
