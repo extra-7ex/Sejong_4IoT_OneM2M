@@ -13,7 +13,7 @@
 
 Pi의 `TinyIoT-MN`과 Mosquitto에서 운영 리소스와 분리된 시험 CNT를 사용했다. 레이더 CIN은 MQTT 요청으로 만든 모의 데이터였고, RiskEngine은 radar SUB 알림을 MQTT로 받았다. `events`와 `alert` CIN은 MQTT 요청으로 생성했으며, oneM2M 성공 응답 `rsc=2001`과 시험 리소스 조회를 확인했다. 별도 MQTT 관찰 구독은 alert 알림 5건을 받았다. 실제 ESP8266이나 부저를 사용한 것은 아니다.
 
-Vision도 실제 VisionAI 출력이 아니라 모의 `fusedTracks` CIN으로 시험했다. 시험 전용 ACP를 통해 `Criskengine`이 이 CNT를 읽었고, 테스트 CIN은 HTTP로 생성했다. 신선한 `camera_only + raise`는 Radar SAFE를 WARNING으로 올렸으며 raise가 없는 신선한 결과에서는 SAFE를 유지했다. 별도 연속 프레임으로 CPA WARNING(`t_cpa_s=2.5936`, `d_cpa_m=0`)과 DANGER(`t_cpa_s=0.9113`, `d_cpa_m=0`), 입력 만료 후 UNKNOWN을 확인했다. 한 첫 실행은 샘플 간격이 맞지 않아 WARNING만 확인했고, 간격을 제어해 재시험한 결과 DANGER를 확인했다.
+Vision도 실제 VisionAI 출력이 아니라 모의 `fusedTracks` CIN으로 시험했다. 시험 전용 ACP를 통해 `Criskengine`이 이 CNT를 읽었고, 테스트 CIN은 HTTP로 생성했다. 당시 코드에서 신선한 `camera_only + raise`는 Radar SAFE를 WARNING으로 올렸으며 raise가 없는 신선한 결과에서는 SAFE를 유지했다. 이 시험은 `radar_ok=true` 필수 조건이 추가되기 전에 수행됐으므로 변경된 조건은 Pi에서 재시험해야 한다. 별도 연속 프레임으로 CPA WARNING(`t_cpa_s=2.5936`, `d_cpa_m=0`)과 DANGER(`t_cpa_s=0.9113`, `d_cpa_m=0`), 입력 만료 후 UNKNOWN을 확인했다. 한 첫 실행은 샘플 간격이 맞지 않아 WARNING만 확인했고, 간격을 제어해 재시험한 결과 DANGER를 확인했다.
 
 alert CIN은 기존 호환 형식인 `level`, `dist`(mm), `ttc`(null)를 쓴다. CPA 값은 `events`의 `t_cpa_s`와 `d_cpa_m`에서 확인한다. 실제 LD2450 업로더 입력, VisionAI의 실제 fusedTracks 생성, 운영 ACP, 작업자 ESP 수신, LED·부저, 재접속 후 상태 동기화는 검증하지 않았다. 실제 수신·부저 검증 전까지 기존 `LOCAL_DECISION`을 유지하고 운영 CNT의 작성자는 한 번에 하나로 둔다.
 
