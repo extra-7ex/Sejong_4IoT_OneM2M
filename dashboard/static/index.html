@@ -90,7 +90,7 @@
       <span><i style="background:var(--accent)"></i>레이더 표적</span>
       <span><i style="background:transparent;border:2px solid #c9d1dc"></i>Vision 추적</span>
       <span><i style="background:rgba(229,72,77,.55);border-radius:2px"></i>핫스팟 (선택 기간 위험 이벤트)</span>
-      <span>원: 위험 <b class="DANGER" id="lg-d">1.5 m</b> · 주의 <b class="WARNING" id="lg-w">3.0 m</b></span>
+      <span>원: 위험 <b class="DANGER" id="lg-d">0.5 m</b> · 주의 <b class="WARNING" id="lg-w">1.0 m</b></span>
     </div>
   </section>
 
@@ -121,7 +121,7 @@
 const $ = id => document.getElementById(id);
 const COLORS = { SAFE: '#2fb36d', WARNING: '#f2a516', DANGER: '#e5484d', UNKNOWN: '#6b7480' };
 const SRC_LABEL = { radar: '레이더', events: '위험 판단', fused: 'Vision', alert: '경보(alert)', vision_status: 'Vision 상태(IPE)', in_events: 'IN 이력' };
-let latest = null, hotspots = [], params = { warning_distance_m: 3, danger_distance_m: 1.5 };
+let latest = null, hotspots = [], params = { warning_distance_m: 1.0, danger_distance_m: 0.5 };
 
 const fmt = (v, unit, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? '-' : `${Number(v).toFixed(d)} ${unit}`;
 const ago = s => s === null || s === undefined ? '-' : s < 60 ? `${s.toFixed(0)}초 전` : s < 3600 ? `${(s/60).toFixed(0)}분 전` : `${(s/3600).toFixed(1)}시간 전`;
@@ -194,7 +194,8 @@ function renderState(s) {
 
 function drawMap() {
   const cv = $('map'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
-  const rangeM = 6, ox = W / 2, oy = H - 30, scale = (H - 50) / rangeM;   // 레이더 원점: 아래 가운데, y = 전방
+  // 표시 범위: 주의 거리의 3배(3–6 m). 기준이 1.0/0.5 m면 3 m까지 보여 위험·주의 원이 잘 보인다
+  const rangeM = Math.min(6, Math.max(3, Math.ceil(params.warning_distance_m * 3))), ox = W / 2, oy = H - 30, scale = (H - 50) / rangeM;   // 레이더 원점: 아래 가운데, y = 전방
   const P = (xm, ym) => [ox + xm * scale, oy - ym * scale];
   g.clearRect(0, 0, W, H);
   // 시야각 ±60°

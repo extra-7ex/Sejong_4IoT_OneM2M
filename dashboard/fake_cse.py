@@ -21,11 +21,11 @@ STATE = {"status": None, "events": [], "seq": 0}
 
 
 def target_at(t: float) -> tuple[float, float, float]:
-    """30초 주기로 5.5 m → 0.8 m → 5.5 m 왕복. (x_mm, y_mm, v_cm_s)"""
+    """30초 주기로 3.5 m → 0.3 m → 3.5 m 왕복 (엔진·지게차 기준 1.0/0.5 m를 지나가도록). (x_mm, y_mm, v_cm_s)"""
     phase = (t % 30) / 30
-    d = 0.8 + 4.7 * abs(math.cos(math.pi * phase))
+    d = 0.3 + 3.2 * abs(math.cos(math.pi * phase))
     x = 0.6 * math.sin(2 * math.pi * phase)
-    v = -4.7 * math.pi / 30 * math.sin(math.pi * phase) * (1 if phase < 0.5 else -1) * 100
+    v = -3.2 * math.pi / 30 * math.sin(math.pi * phase) * (1 if phase < 0.5 else -1) * 100
     return x * 1000, d * 1000, v
 
 
@@ -33,13 +33,13 @@ def current() -> dict:
     now = time.time()
     x, y, v = target_at(now - T0)
     d = math.hypot(x, y) / 1000
-    status = "DANGER" if d <= 1.5 else "WARNING" if d <= 3.0 else "SAFE"
+    status = "DANGER" if d <= 0.5 else "WARNING" if d <= 1.0 else "SAFE"
     if status != STATE["status"]:
         STATE["status"] = status
         STATE["seq"] += 1
         con = {"schema": "safezone.risk-event.v1", "status": status, "reason": "current_distance_" + status.lower(),
                "distance_m": round(d, 3), "t_cpa_s": None, "d_cpa_m": None, "target_count": 1,
-               "parameters": {"warning_distance_m": 3.0, "danger_distance_m": 1.5}}
+               "parameters": {"warning_distance_m": 1.0, "danger_distance_m": 0.5}}
         STATE["events"].append({"ri": f"cin-ev{STATE['seq']}", "ct": time.strftime("%Y%m%dT%H%M%S"),
                                 "con": json.dumps(con)})
     radar = {"ri": f"cin-r{int(now * 10)}", "con": json.dumps({"ts": round(now, 2), "targets": [{"x": round(x), "y": round(y), "v": round(v)}]})}
