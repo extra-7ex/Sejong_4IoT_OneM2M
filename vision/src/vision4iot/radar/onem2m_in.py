@@ -27,9 +27,11 @@ class OneM2MRadar:
     @classmethod
     def from_cfg(cls, cfg, base_url=None):
         o, r = cfg["onem2m"], cfg["radar"]
-        client = Client(base_url or o.get("base_url"), o["cse_name"], o["originator"], timeout=1.0)
+        # Pi의 tinyIoT는 가끔 1–2초 멈춘다(SD카드 쓰기). 3초까지 기다리고, 2초 안의 레이더 값은 신선하다고 본다
+        client = Client(base_url or o.get("base_url"), o["cse_name"], o["originator"],
+                        timeout=float(o.get("timeout_s", 3.0)))
         # 레이더는 0.5초마다 올라오므로 4 Hz면 충분하다. 10 Hz로 읽으면 Pi의 tinyIoT가 밀린다(11/19 실측)
-        return cls(client, o["radar_path"], hz=float(r.get("poll_hz", 4.0)),
+        return cls(client, o["radar_path"], hz=float(r.get("poll_hz", 4.0)), stale_s=float(r.get("stale_s", 2.0)),
                    flip_x=r.get("flip_x", False), flip_v=r.get("flip_v", False))
 
     def poll_once(self):

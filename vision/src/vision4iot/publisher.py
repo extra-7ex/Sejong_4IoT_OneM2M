@@ -46,7 +46,7 @@ class JsonlPublisher:
 class OneM2MPublisher:
     def __init__(self, client, fused_path, mni=100, log=print, min_interval_s=0.25):
         self.client, self.path, self.log = client, fused_path.strip("/"), log
-        self.min_interval_s = min_interval_s   # 프레임마다 쓰면 Pi의 tinyIoT가 밀린다. 최대 4건/초
+        self.min_interval_s = min_interval_s   # 프레임마다 쓰면 Pi의 tinyIoT가 밀린다. 기본 최대 2건/초
         self._last_post = 0.0
         self.sent = self.failed = 0
         self.last_error = None
@@ -111,7 +111,7 @@ def make_publisher(cfg, mode=None, base_url=None):
         return JsonlPublisher(resolve(cfg["output"]["jsonl_file"]))
     if mode == "onem2m":
         o = cfg["onem2m"]
-        client = Client(base_url or o.get("base_url"), o["cse_name"], o["originator"], timeout=1.0)
+        client = Client(base_url or o.get("base_url"), o["cse_name"], o["originator"], timeout=float(o.get("timeout_s", 3.0)))
         return OneM2MPublisher(client, o["fused_path"], log=lambda s: print(s, file=sys.stderr, flush=True),
-                               min_interval_s=float(o.get("publish_min_s", 0.25)))
+                               min_interval_s=float(o.get("publish_min_s", 0.5)))
     raise ValueError(f"output.mode {mode!r}: stdout | jsonl | onem2m")

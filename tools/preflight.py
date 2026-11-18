@@ -223,8 +223,6 @@ def check_writer(states: dict[str, str]) -> None:
         say(OK, "엔진 모드: 위험 엔진이 alert를 씀 (카메라 결합 판단이 지게차까지 감)")
     else:
         say(OK, "기본 모드: 레이더 노드가 거리로 alert를 씀 (카메라 결합은 관제 화면에만)")
-    if engine_alert and env.get("RISK_STALE_AFTER_S") is None:
-        say(WARN, "엔진 모드인데 RISK_STALE_AFTER_S가 없음 → MQTT 지연 한 번에 UNKNOWN(정지)이 날 수 있음 (2.0 권장)")
 
 
 def http_target(nu: str) -> Optional[tuple[str, int]]:
