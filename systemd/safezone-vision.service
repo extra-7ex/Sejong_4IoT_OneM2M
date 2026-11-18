@@ -17,6 +17,9 @@ EnvironmentFile=-/etc/default/safezone
 ExecStart=<VISION_PYTHON> -m vision4iot.main $VISION_ARGS
 # Ctrl+C와 같은 SIGINT로 끝내야 마지막 전송을 정리하고 끝난다.
 # 장애 시연은 'systemctl stop safezone-vision'으로 한다. 정상 종료는 다시 켜지 않고, 비정상 종료만 다시 켠다
+# YOLO 추론이 Pi CPU 4개를 거의 다 써서(약 270%) tinyIoT가 1–2초씩 밀리고 엔진이 UNKNOWN을 냈다(11/19 실측).
+# VisionAI 우선순위를 낮춰 MN·엔진이 먼저 CPU를 받게 한다
+Nice=10
 KillSignal=SIGINT
 TimeoutStopSec=10
 Restart=on-failure
