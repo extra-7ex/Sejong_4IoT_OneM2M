@@ -1,0 +1,15 @@
+[Unit]
+Description=SafeZone MN -> IN risk event bridge
+After=network-online.target tinyiot-mn.service tinyiot-in-local.service
+
+[Service]
+Type=simple
+# <PI_USER>, 저장소 경로는 실제 환경에 맞게 수정
+User=<PI_USER>
+WorkingDirectory=/home/<PI_USER>/Sejong_4IoT_OneM2M
+ExecStart=/usr/bin/python3 -m onem2m.mn_to_in_bridge
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

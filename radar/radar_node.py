@@ -25,7 +25,9 @@ ORIGIN = 'Cforklift01'
 
 UPLOAD_INTERVAL = 0.5    # radar 업로드 최소 간격 (초)
 LOCAL_DECISION = True    # 위험 판단 엔진 완성 전까지 임시로 alert 직접 기록
-WARN_MM = 500            # 경고 거리 (mm)
+WARN_MM = 1000           # warn 거리 (mm): 경보만
+DANGER_MM = 500          # danger 거리 (mm): 경보 + 지게차 정지
+RANK = {'safe': 0, 'warn': 1, 'danger': 2}
 OFF_DELAY = 1.5          # 이 시간(초) 동안 계속 범위 밖이어야 해제
 CON_AS_STRING = True     # tinyIoT는 con에 문자열만 받음
 HTTP_TIMEOUT = 5         # (HTTP) tinyIoT 응답 대기 시간
@@ -140,9 +142,12 @@ while True:
     if not LOCAL_DECISION:
         continue
     near = min((math.hypot(t['x'], t['y']) for t in targets), default=None)
-    if near is not None and near <= WARN_MM:
+    want = 'danger' if near is not None and near <= DANGER_MM else \
+           'warn' if near is not None and near <= WARN_MM else 'safe'
+    if RANK[want] >= RANK[level]:     # 같거나 더 위험해짐: 바로 기록
         last_in = now
-        if level != 'danger':        # 안전 → 위험 바뀔 때만 기록
-            level = 'danger'; set_alert('danger', round(near))
-    elif level == 'danger' and now - last_in >= OFF_DELAY:
-        level = 'safe'; set_alert('safe')
+        if want != level:
+            level = want; set_alert(level, round(near))
+    elif now - last_in >= OFF_DELAY:   # 덜 위험해짐: OFF_DELAY 동안 계속 그러면 낮춤
+        level, last_in = want, now
+        set_alert(level, round(near) if near is not None else None)

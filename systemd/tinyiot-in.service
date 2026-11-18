@@ -1,0 +1,16 @@
+[Unit]
+Description=tinyIoT IN-CSE (notebook WSL)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# <WSL_USER>, 경로는 실제 환경에 맞게 수정. WSL에서 systemd가 켜져 있어야 함
+User=<WSL_USER>
+WorkingDirectory=/home/<WSL_USER>/tinyIoT/source/server
+ExecStart=/home/<WSL_USER>/tinyIoT/source/server/server
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
