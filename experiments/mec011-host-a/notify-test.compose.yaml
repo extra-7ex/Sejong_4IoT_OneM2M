@@ -1,0 +1,7 @@
+services:
+  notify-test:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./notify-test.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - trial

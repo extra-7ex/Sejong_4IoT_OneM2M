@@ -1,0 +1,7 @@
+FROM ubuntu:24.04
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev libwebsockets-dev ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/tinyiot
+COPY . .
+RUN sed -i 's|^// #define DB_TYPE DB_SQLITE|#define DB_TYPE DB_SQLITE|; s|^#define DB_TYPE DB_POSTGRESQL|// #define DB_TYPE DB_POSTGRESQL|' config.h && make -j2 server && rm -f data.db
+EXPOSE 3000
+CMD ["./server"]
