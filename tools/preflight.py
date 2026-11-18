@@ -70,6 +70,8 @@ def request(base: str, path: str, method: str = "GET", timeout: float = 3) -> tu
             return res.status, json.loads(raw) if raw else None
     except urllib.error.HTTPError as exc:
         return exc.code, None
+    except (urllib.error.URLError, OSError, ValueError):
+        return 0, None                      # 연결 거부·시간 초과: 응답 없음으로 본다
 
 
 def con_of(cin: dict) -> Any:
@@ -176,7 +178,7 @@ def check_data() -> None:
     print("4. 최신 데이터 (MN)")
     status, _ = request(MN, "")
     if status != 200:
-        say(BAD, f"MN-CSE 응답 없음 (HTTP {status})")
+        say(BAD, "MN-CSE 응답 없음" + (f" (HTTP {status})" if status else "") + " → sudo systemctl start tinyiot-mn")
         return
     status, _ = request(IN, "")
     say(OK if status == 200 else BAD, f"IN-CSE {'응답' if status == 200 else '응답 없음'}")
