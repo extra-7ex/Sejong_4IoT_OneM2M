@@ -1,0 +1,7 @@
+[Unit]
+Description=SafeZone 시연 파이프라인 (레이더, 위험 엔진, 브리지, 대시보드, IPE, VisionAI)
+Wants=tinyiot-mn.service
+After=network-online.target mosquitto.service tinyiot-mn.service tinyiot-in-local.service
+
+[Install]
+WantedBy=multi-user.target
