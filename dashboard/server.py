@@ -50,6 +50,9 @@ def load_config() -> dict[str, Any]:
         "events_path": env("DASH_EVENTS_PATH", "/AE-riskengine/events/la"),
         "fused_path": env("DASH_FUSED_PATH", "/AE-VisionAI/fusedTracks/la"),
         "alert_path": env("DASH_ALERT_PATH", "/AE-forklift01/alert/la"),
+        # IPE(onem2m/mec_ipe.py)가 기록하는 VisionAI 서비스 상태. ACTIVE·INACTIVE
+        "vision_status_path": env("DASH_VISION_STATUS_PATH", "/AE-mecIPE/MecServices/safezone-vision/status/la"),
+        "vision_status_stale_s": float(env("DASH_VISION_STATUS_STALE_S", "30")),
         "poll_s": float(env("DASH_POLL_S", "0.5")),
         "health_s": float(env("DASH_HEALTH_S", "5")),
         "timeout_s": float(env("DASH_TIMEOUT_S", "3")),
@@ -283,7 +286,7 @@ class Poller(threading.Thread):
         self.baseline_done = False
 
     def poll_once(self) -> None:
-        for name in ("radar", "fused", "alert"):
+        for name in ("radar", "fused", "alert", "vision_status"):
             state, cin = self.client.latest(self.cfg[f"{name}_path"])
             self.store.update_source(name, state, cin)
         state, cin = self.client.latest(self.cfg["events_path"])
@@ -346,7 +349,8 @@ class Poller(threading.Thread):
 
 def make_handler(store: Store, cfg: dict[str, Any]):
     public_cfg = {k: cfg[k] for k in ("cse_base", "in_base", "in_events_path", "radar_path", "events_path", "fused_path",
-                                      "alert_path", "poll_s", "grid_mm")}
+                                      "alert_path", "vision_status_path", "vision_status_stale_s",
+                                      "poll_s", "grid_mm")}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:

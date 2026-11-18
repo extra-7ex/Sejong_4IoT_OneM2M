@@ -123,6 +123,15 @@ class InModeTest(unittest.TestCase):
     def set_mn_event(self):
         self.client.responses[self.cfg["events_path"]] = ("ok", unwrap_cin({"m2m:cin": event_cin("e9", "DANGER", 1.0)}))
 
+    def test_vision_status_from_ipe_is_exposed(self):
+        self.poller.poll_once()
+        self.assertEqual(self.store.snapshot()["sources"]["vision_status"]["state"], "empty")
+        self.client.responses[self.cfg["vision_status_path"]] = ("ok", unwrap_cin({"m2m:cin": {"ri": "s1", "con": json.dumps(
+            {"service": "safezone-vision", "state": "INACTIVE", "reason": "stale 4.2s", "ts": 1, "since": 1})}}))
+        self.poller.poll_once()
+        src = self.store.snapshot()["sources"]["vision_status"]
+        self.assertEqual((src["state"], src["con"]["state"]), ("ok", "INACTIVE"))
+
 
 if __name__ == "__main__":
     unittest.main()
