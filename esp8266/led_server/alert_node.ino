@@ -14,10 +14,11 @@ const int STEP_DEG = 2;                  // 한 번에 움직이는 각도
 const unsigned long STEP_MS = 15;        // 움직이는 간격 (작을수록 빠름)
 const unsigned long WARN_BEEP_MS   = 450;  // warn: 느린 경보 (포크는 계속 움직임)
 const unsigned long DANGER_BEEP_MS = 150;  // danger: 빠른 경보 + 포크 정지
+const unsigned long UNKNOWN_BEEP_MS = 1000; // unknown: 긴 경보 + 포크 정지 (센서·판단이 끊김)
 
 ESP8266WebServer server(80);
 Servo motor;
-int mode = 0;                            // 0 safe, 1 warn, 2 danger
+int mode = 0;                            // 0 safe, 1 warn, 2 danger, 3 unknown
 bool beepOn = false;
 int deg = MIN_DEG, dir = 1;
 unsigned long lastStep = 0, lastBeep = 0;
@@ -30,8 +31,17 @@ void setMode(int m) {
   setLed(m > 0);
   beepOn = false; lastBeep = 0;
   digitalWrite(PIN_BUZZER, LOW);
-  const char* names[] = {"SAFE: 포크 동작, 부저 OFF", "WARN: 포크 동작, 느린 경보", "DANGER: 포크 정지, 빠른 경보"};
+  const char* names[] = {"SAFE: 포크 동작, 부저 OFF", "WARN: 포크 동작, 느린 경보", "DANGER: 포크 정지, 빠른 경보",
+                         "UNKNOWN: 포크 정지, 긴 경보 (센서·판단 끊김)"};
   Serial.println(names[m]);
+}
+
+// alert level → mode. 모르는 값(unknown, 빈 값 포함)은 알 수 없음으로 보고 멈춘다.
+int levelToMode(const String& level) {
+  if (level == "safe") return 0;
+  if (level == "warn") return 1;
+  if (level == "danger") return 2;
+  return 3;
 }
 
 // tinyIoT 알림 수신 (구독 확인 요청 + alert 새 데이터)
@@ -58,7 +68,7 @@ void handleNotify() {
     level = con["level"] | "";
   }
   Serial.println("level = " + level);
-  setMode(level == "danger" ? 2 : level == "warn" ? 1 : 0);   // 그 외(safe, unknown)는 안전 동작
+  setMode(levelToMode(level));               // unknown이면 danger처럼 포크를 멈춘다
 }
 
 void setup() {
@@ -84,15 +94,16 @@ void setup() {
 void loop() {
   server.handleClient();
 
-  if (Serial.available()) {                  // 시험용: 시리얼 모니터에서 d / w / s
+  if (Serial.available()) {                  // 시험용: 시리얼 모니터에서 d / w / s / u
     char c = Serial.read();
     if (c == 'd') setMode(2);
     else if (c == 'w') setMode(1);
     else if (c == 's') setMode(0);
+    else if (c == 'u') setMode(3);
   }
 
   unsigned long now = millis();
-  if (mode < 2 && now - lastStep >= STEP_MS) {   // safe·warn: 포크 계속 왕복
+  if (mode < 2 && now - lastStep >= STEP_MS) {   // safe·warn만 포크 왕복 (danger·unknown은 정지)
     lastStep = now;
     deg += dir * STEP_DEG;
     if (deg >= MAX_DEG || deg <= MIN_DEG) {
@@ -101,7 +112,8 @@ void loop() {
     }
     motor.write(deg);
   }
-  if (mode > 0 && now - lastBeep >= (mode == 2 ? DANGER_BEEP_MS : WARN_BEEP_MS)) {  // warn·danger: 부저
+  unsigned long beepMs = mode == 3 ? UNKNOWN_BEEP_MS : mode == 2 ? DANGER_BEEP_MS : WARN_BEEP_MS;
+  if (mode > 0 && now - lastBeep >= beepMs) {  // warn·danger·unknown: 부저
     lastBeep = now;
     beepOn = !beepOn;
     digitalWrite(PIN_BUZZER, beepOn ? HIGH : LOW);

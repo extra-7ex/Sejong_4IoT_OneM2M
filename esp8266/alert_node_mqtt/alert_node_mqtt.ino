@@ -1,5 +1,5 @@
 // alert 알림을 oneM2M MQTT 바인딩으로 받는 ESP8266 경보 노드.
-// HTTP 판(led_server/alert_node.ino)과 하는 일은 같다: alert의 level이 warn·danger면 LED를 켜고 아니면 끈다.
+// HTTP 판(led_server/alert_node.ino)과 하는 일은 같다: alert의 level이 safe가 아니면(warn·danger·unknown) LED를 켜고, safe면 끈다.
 // 차이: ESP가 웹서버를 열지 않고 Pi의 MQTT 브로커에 접속해 기다린다 → CSE가 ESP의 IP를 알 필요가 없다.
 //
 // CSE 쪽 구독: onem2m/sub_alert_node_mqtt.sh (nu = mqtt://127.0.0.1:1883/Calertnode/json)
@@ -47,7 +47,7 @@ void onMessage(char *topic, byte *payload, unsigned int len) {
     level = con["level"] | "";
   }
   Serial.println("level = " + level);
-  setLed(level == "danger" || level == "warn");
+  setLed(level != "safe");                   // warn·danger·unknown(센서·판단 끊김)이면 켠다
 }
 
 void connectMqtt() {
