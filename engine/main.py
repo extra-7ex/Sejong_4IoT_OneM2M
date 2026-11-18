@@ -80,7 +80,8 @@ class RiskApplication:
         return apply_radar_advice(decision, observation,
                                   lower_max_age_s=config.vision_lower_max_age_s,
                                   ghost_min_distance_m=config.vision_ghost_min_distance_m,
-                                  match_tolerance_m=config.vision_match_tolerance_m)
+                                  match_tolerance_m=config.vision_match_tolerance_m,
+                                  ghost_lower_enabled=config.vision_ghost_lower_enabled)
 
     def poll_once(self) -> dict:
         try:

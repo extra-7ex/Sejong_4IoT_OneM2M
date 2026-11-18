@@ -16,6 +16,7 @@ class VisionAdviceTests(unittest.TestCase):
         observation = assess(self.cin({
             "ts": 100.0,
             "cam_ok": True,
+            "radar_ok": True,
             "tracks": [{"state": "camera_only", "advice": "raise"}],
         }), received_mono_s=1.0, received_unix_s=101.0)
         decision = apply_radar_advice({"status": "SAFE", "level": "safe"}, observation)
@@ -37,6 +38,15 @@ class VisionAdviceTests(unittest.TestCase):
             decision = apply_radar_advice({"status": status}, observation)
             self.assertEqual(decision["status"], status)
 
+    def test_radar_availability_requires_boolean_true(self):
+        for value in (False, None, "true", 1):
+            payload = {"ts": 100.0, "cam_ok": True, "tracks": [{"state": "camera_only", "advice": "raise"}]}
+            if value is not None:
+                payload["radar_ok"] = value
+            observation = assess(self.cin(payload), 1.0, 100.5)
+            self.assertEqual(observation["status"], "vision_radar_unavailable")
+            self.assertEqual(apply_radar_advice({"status": "SAFE"}, observation)["status"], "SAFE")
+
 
 def target(slot, distance, status, **extra):
     return {"target": str(slot), "distance_m": distance, "status": status,
@@ -52,6 +62,11 @@ def fresh(*tracks, age=0.2):
 
 
 class FusionRuleTests(unittest.TestCase):
+    def test_ghost_lower_is_disabled_by_default(self):
+        decision = apply_radar_advice(radar("DANGER", target(0, 1.3, "DANGER")),
+            fresh({"state": "ghost_suspect", "advice": "lower_to_caution", "radar_id": 0, "dist_m": 1.3}))
+        self.assertEqual(decision["status"], "DANGER")
+
     def test_confirmed_risky_posture_raises_warning_target_to_danger(self):
         for posture in ("lying", "crouching"):
             decision = apply_radar_advice(
@@ -75,7 +90,7 @@ class FusionRuleTests(unittest.TestCase):
     def test_ghost_lowers_danger_to_warning_only(self):
         decision = apply_radar_advice(
             radar("DANGER", target(0, 1.3, "DANGER")),
-            fresh({"state": "ghost_suspect", "advice": "lower_to_caution", "radar_id": 0, "dist_m": 1.35}))
+            fresh({"state": "ghost_suspect", "advice": "lower_to_caution", "radar_id": 0, "dist_m": 1.35}), ghost_lower_enabled=True)
         self.assertEqual(decision["status"], "WARNING")
         self.assertEqual(decision["reason"], "vision_ghost_suspect_lowered")
         self.assertEqual(decision["vision_adjustments"][0]["rule"], "ghost_lower")
@@ -91,12 +106,12 @@ class FusionRuleTests(unittest.TestCase):
             (radar("DANGER", target(0, 1.3, "DANGER", association_valid=False)), fresh(ghost)),
         )
         for decision, observation in cases:
-            self.assertEqual(apply_radar_advice(decision, observation)["status"], "DANGER")
+            self.assertEqual(apply_radar_advice(decision, observation, ghost_lower_enabled=True)["status"], "DANGER")
 
     def test_ghost_lower_keeps_other_real_danger(self):
         decision = apply_radar_advice(
             radar("DANGER", target(0, 1.3, "DANGER"), target(1, 1.2, "DANGER")),
-            fresh({"state": "ghost_suspect", "advice": "lower_to_caution", "radar_id": 0, "dist_m": 1.3}))
+            fresh({"state": "ghost_suspect", "advice": "lower_to_caution", "radar_id": 0, "dist_m": 1.3}), ghost_lower_enabled=True)
         self.assertEqual(decision["status"], "DANGER")
         self.assertEqual([t["status"] for t in decision["targets"]], ["WARNING", "DANGER"])
 
@@ -107,6 +122,13 @@ class FusionRuleTests(unittest.TestCase):
 
 
 class ReleaseHoldTests(unittest.TestCase):
+    def test_release_hold_can_be_set_to_one_and_half_seconds(self):
+        hold = ReleaseHold(1.5)
+        hold.apply({"status": "DANGER"}, 0.0)
+        self.assertEqual(hold.apply({"status": "SAFE"}, 1.0)["status"], "DANGER")
+        self.assertEqual(hold.apply({"status": "SAFE"}, 2.4)["status"], "DANGER")
+        self.assertEqual(hold.apply({"status": "SAFE"}, 2.5)["status"], "SAFE")
+
     def test_safe_must_last_three_seconds(self):
         hold = ReleaseHold(3.0)
         self.assertEqual(hold.apply({"status": "DANGER"}, 0.0)["status"], "DANGER")
@@ -160,17 +182,23 @@ class ApplicationFusionTests(unittest.TestCase):
 
     def test_tick_keeps_vision_raise_and_release_waits_three_seconds(self):
         far = [{"slot": 0, "x": 0, "y": 5000}]
-        self.cse.vision = {"cam_ok": True, "tracks": [{"state": "camera_only", "advice": "raise"}]}
+        self.cse.vision = {"cam_ok": True, "radar_ok": True, "tracks": [{"state": "camera_only", "advice": "raise"}]}
         self.assertEqual(self.app.accept_message(self.frame("a", far), self.now[0])["status"], "WARNING")
         self.now[0] = 10.2
         self.assertEqual(self.app.tick()["status"], "WARNING")  # a tick used to reset this to radar SAFE
-        self.cse.vision = {"cam_ok": True, "tracks": []}
+        self.cse.vision = {"cam_ok": True, "radar_ok": True, "tracks": []}
         # Radar SAFE from 10.5 s; frames every 0.5 s keep the radar association valid.
         for step, expected in enumerate(["WARNING"] * 6 + ["SAFE"]):
             self.now[0] = 10.5 + 0.5 * step
             decision = self.app.accept_message(self.frame(f"f{step}", far), self.now[0])
             self.assertEqual(decision["status"], expected, self.now[0])
         self.assertEqual(self.cse.events, ["WARNING", "SAFE"])
+
+    def test_radar_staleness_overrides_vision_warning(self):
+        self.cse.vision = {"cam_ok": True, "radar_ok": True, "tracks": [{"state": "camera_only", "advice": "raise"}]}
+        self.assertEqual(self.app.accept_message(self.frame("a", [{"slot": 0, "x": 0, "y": 5000}]), self.now[0])["status"], "WARNING")
+        self.now[0] += 1.1
+        self.assertEqual(self.app.tick()["status"], "UNKNOWN")
 
 
 if __name__ == "__main__":

@@ -3,13 +3,13 @@
 
 ### Vision 조언과 작업자 alert 시험
 
-`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`·`WARNING`·`DANGER`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다(`UNKNOWN`일 때는 조회하지 않고 그대로 둔다). 주기 타이머 폴링이 아니라 레이더 입력에 따른 조회다. Vision 입력이 없거나 오래됐거나 `cam_ok=false`이거나 유효하지 않으면 레이더 판정을 유지한다. 시계가 동기화됐다는 가정이 필요하다.
+`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`·`WARNING`·`DANGER`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다(`UNKNOWN`일 때는 조회하지 않고 그대로 둔다). 주기 타이머 폴링이 아니라 레이더 입력에 따른 조회다. Vision 입력이 없거나 오래됐거나 `cam_ok=false`이거나 유효하지 않으면 레이더 판정을 유지한다. 시계가 동기화됐다는 가정이 필요하다. 모든 Vision 조언은 Vision 결과의 `cam_ok`와 `radar_ok`가 모두 `true`일 때만 쓴다. `radar_ok`가 없거나 `true`가 아니면 조언을 적용하지 않고 `vision_radar_unavailable`을 기록한다(VisionAI가 레이더 입력 없이 카메라만으로 만든 결과를 믿지 않기 위해서다).
 
 | 규칙 | 조건 | 결과 |
 |---|---|---|
 | 카메라 단독 올리기 | 레이더 `SAFE`, Vision `ts` 3초 이내, `camera_only` + `raise` | `WARNING` |
 | 자세 올리기 | 레이더 `WARNING` 표적, 같은 슬롯(`radar_id`)이고 거리 차 0.5m 이내인 `confirmed` + `raise`, 자세 `crouching`·`lying`, Vision 3초 이내 | 그 표적 `DANGER` |
-| 유령 낮추기 | 레이더 `DANGER` 표적, 같은 슬롯이고 거리 차 0.5m 이내인 `ghost_suspect` + `lower_to_caution`, 표적 거리 1m 초과, Vision **1초** 이내 | 그 표적 `WARNING` (`SAFE`로는 내리지 않음) |
+| 유령 낮추기 (**기본 꺼짐**, `VISION_GHOST_LOWER_ENABLED=true`로 켬) | 레이더 `DANGER` 표적, 같은 슬롯이고 거리 차 0.5m 이내인 `ghost_suspect` + `lower_to_caution`, 표적 거리 1m 초과, Vision **1초** 이내 | 그 표적 `WARNING` (`SAFE`로는 내리지 않음) |
 
 표적마다 조정한 뒤 가장 높은 단계를 최종 판정으로 쓴다. 다른 표적이 진짜 `DANGER`면 유령을 낮춰도 `DANGER`다. 직전 표적을 잃어 이전 위험을 유지 중인 표적(`held_previous_risk`)과 연결이 불확실한 표적은 조정하지 않는다. 조정 내용은 판정의 `vision_adjustments`, 레이더만의 판정은 `radar_status`에 남는다.
 
@@ -23,6 +23,7 @@
 | `VISION_MATCH_TOLERANCE_M` | 0.5 | Vision 표적과 레이더 표적의 거리 차 허용 |
 | `VISION_FUTURE_SKEW_S` | 0.5 | Vision `ts`가 미래로 허용되는 오차 |
 | `RISK_RELEASE_HOLD_S` | 3.0 | `SAFE` 해제 지연 (0이면 끔) |
+| `VISION_GHOST_LOWER_ENABLED` | false | 유령 낮추기 사용. 실제 사람을 놓칠 위험을 실장비에서 확인하기 전에는 끈다 |
 
 위 규칙은 단위 시험(`engine/test_vision_advice.py`)으로만 확인했다. 실제 VisionAI fusedTracks와 실제 LD2450으로는 아직 시험하지 않았다.
 

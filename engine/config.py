@@ -32,6 +32,7 @@ class RiskConfig:
     vision_lower_max_age_s: float = 1.0
     vision_ghost_min_distance_m: float = 1.0
     vision_match_tolerance_m: float = 0.5
+    vision_ghost_lower_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "RiskConfig":
@@ -51,6 +52,7 @@ class RiskConfig:
             vision_lower_max_age_s=_env_float("VISION_LOWER_MAX_AGE_S", 1.0),
             vision_ghost_min_distance_m=_env_float("VISION_GHOST_MIN_DISTANCE_M", 1.0),
             vision_match_tolerance_m=_env_float("VISION_MATCH_TOLERANCE_M", 0.5),
+            vision_ghost_lower_enabled=os.getenv("VISION_GHOST_LOWER_ENABLED", "false").lower() == "true",
         )
 
 

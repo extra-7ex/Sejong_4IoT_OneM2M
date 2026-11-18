@@ -33,6 +33,7 @@ def assess(cin: Any, received_mono_s: float, received_unix_s: float,
             raise ValueError("Vision con must be an object")
         timestamp = payload.get("ts")
         cam_ok = payload.get("cam_ok")
+        radar_ok = payload.get("radar_ok")
         tracks = payload.get("tracks")
         if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp):
             raise ValueError("Vision ts must be finite Unix seconds")
@@ -48,6 +49,8 @@ def assess(cin: Any, received_mono_s: float, received_unix_s: float,
             return {"status": "stale", **base, "raise_warning": False, "tracks": []}
         if not cam_ok:
             return {"status": "camera_unavailable", **base, "raise_warning": False, "tracks": []}
+        if radar_ok is not True:
+            return {"status": "vision_radar_unavailable", **base, "raise_warning": False, "tracks": []}
         raise_warning = any(track.get("state") == "camera_only" and track.get("advice") == "raise"
                             for track in tracks)
         return {"status": "fresh", **base, "raise_warning": raise_warning, "tracks": tracks}
@@ -83,7 +86,8 @@ def _matching_track(evaluation: dict, tracks: list[dict], state: str, advice: st
 
 
 def apply_radar_advice(decision: dict, observation: dict, lower_max_age_s: float = 1.0,
-                       ghost_min_distance_m: float = 1.0, match_tolerance_m: float = 0.5) -> dict:
+                       ghost_min_distance_m: float = 1.0, match_tolerance_m: float = 0.5,
+                       ghost_lower_enabled: bool = False) -> dict:
     """Combine one radar decision with one Vision observation."""
     result = dict(decision)
     result["vision"] = {key: value for key, value in observation.items()
@@ -107,7 +111,7 @@ def apply_radar_advice(decision: dict, observation: dict, lower_max_age_s: float
                                 radar_status=status, vision_posture=track.get("posture"))
                 adjustments.append({"target": evaluation.get("target"), "from": status, "to": "DANGER",
                                     "rule": "posture_raise", "posture": track.get("posture")})
-        elif status == "DANGER" and not held and lower_allowed:
+        elif status == "DANGER" and not held and lower_allowed and ghost_lower_enabled:
             distance = evaluation.get("distance_m")
             track = _matching_track(evaluation, tracks, "ghost_suspect", "lower_to_caution", match_tolerance_m)
             if track is not None and isinstance(distance, (int, float)) and distance > ghost_min_distance_m:
