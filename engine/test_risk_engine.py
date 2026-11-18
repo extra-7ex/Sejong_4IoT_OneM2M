@@ -83,6 +83,12 @@ class RiskTests(unittest.TestCase):
         after_grace = self.engine.process_message(cin("d", 4, [{"slot": 2, "x": 5000, "y": 0}]), 2.21)
         self.assertEqual(after_grace["status"], "SAFE")
 
+    def test_safe_target_leaving_view_stays_safe(self):
+        # 멀리(SAFE) 있던 사람이 시야를 벗어나면 UNKNOWN(지게차 정지)으로 깜빡이지 않는다
+        self.engine.process_message(cin("a", 1, [{"x": 5000, "y": 0}]), 1.0)
+        gone = self.engine.process_message(cin("b", 2, []), 1.4)
+        self.assertEqual((gone["status"], gone["reason"]), ("SAFE", "target_left_while_safe"))
+
     def test_track_loss_does_not_switch_immediately_to_safe(self):
         self.engine.process_message(cin("a", 1, [{"x": 1200, "y": 0}]), 1.0)
         interim = self.engine.process_message(cin("b", 2, []), 1.2)

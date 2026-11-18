@@ -28,7 +28,9 @@ class OneM2MRadar:
     def from_cfg(cls, cfg, base_url=None):
         o, r = cfg["onem2m"], cfg["radar"]
         client = Client(base_url or o.get("base_url"), o["cse_name"], o["originator"], timeout=1.0)
-        return cls(client, o["radar_path"], flip_x=r.get("flip_x", False), flip_v=r.get("flip_v", False))
+        # 레이더는 0.5초마다 올라오므로 4 Hz면 충분하다. 10 Hz로 읽으면 Pi의 tinyIoT가 밀린다(11/19 실측)
+        return cls(client, o["radar_path"], hz=float(r.get("poll_hz", 4.0)),
+                   flip_x=r.get("flip_x", False), flip_v=r.get("flip_v", False))
 
     def poll_once(self):
         """la를 한 번 읽어 반영. 시험에서도 직접 부른다."""

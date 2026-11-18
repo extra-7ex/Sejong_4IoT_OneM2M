@@ -67,6 +67,6 @@ def one_m2m_config() -> dict[str, str]:
         "vision_future_skew_s": str(_env_float("VISION_FUTURE_SKEW_S", 0.5)),
         "origin": os.getenv("ONEM2M_ORIGIN", "Criskengine"),
         "rvi": os.getenv("ONEM2M_RVI", "3"),
-        "poll_interval_s": str(_env_float("ONEM2M_POLL_INTERVAL_S", 0.1)),
+        "poll_interval_s": str(_env_float("ONEM2M_POLL_INTERVAL_S", 0.2)),
         "http_timeout_s": str(_env_float("ONEM2M_HTTP_TIMEOUT_S", 1.0)),
     }

@@ -146,6 +146,10 @@ class RiskEngine:
                         previous_status, "target_temporarily_missing_hold_previous_risk",
                         received, frame, targets=[], received_unix_s=received_unix, held=True,
                     )
+                if previous_status == "SAFE":
+                    # 안전 거리에 있던 사람이 시야를 벗어난 것: 위험이 늘지 않았으므로 SAFE를 유지한다.
+                    # (UNKNOWN이면 엔진 경보 모드에서 지게차가 1초쯤 멈췄다 다시 움직인다)
+                    return self._decision("SAFE", "target_left_while_safe", received, frame, targets=[], received_unix_s=received_unix)
                 return self._decision("UNKNOWN", "target_temporarily_missing", received, frame, targets=[], received_unix_s=received_unix, held=True)
             self.history.clear()
             self.missing_track_since.clear()

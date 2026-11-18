@@ -8,7 +8,8 @@ Type=simple
 User=<PI_USER>
 # 모델(yolo11n-pose_ncnn_model)과 calib/H.json이 있는 VisionAI 폴더. install.sh의 두 번째 인자
 WorkingDirectory=<VISION_DIR>
-Environment=PYTHONPATH=<VISION_DIR>/src
+# 코드는 이 저장소의 vision/src를 쓴다(git pull로 갱신). 모델·보정·설정은 VISION_DIR에서 읽는다
+Environment=PYTHONPATH=/home/<PI_USER>/Sejong_4IoT_OneM2M/vision/src
 Environment=PYTHONUNBUFFERED=1
 Environment="VISION_ARGS=--config config.pi.yaml --radar onem2m --output onem2m --base-url http://127.0.0.1:3000"
 EnvironmentFile=-/etc/default/safezone
