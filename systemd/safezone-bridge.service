@@ -1,6 +1,7 @@
 [Unit]
 Description=SafeZone MN -> IN risk event bridge
 After=network-online.target tinyiot-mn.service tinyiot-in-local.service
+PartOf=safezone.target
 
 [Service]
 Type=simple
@@ -12,4 +13,4 @@ Restart=always
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=multi-user.target safezone.target

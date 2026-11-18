@@ -1,0 +1,18 @@
+[Unit]
+Description=SafeZone 가상 레이더 (radar/sim_rader.py, 30초 시나리오 반복)
+After=network-online.target mosquitto.service tinyiot-mn.service
+PartOf=safezone.target
+Conflicts=safezone-radar.service
+
+[Service]
+Type=simple
+User=<PI_USER>
+WorkingDirectory=/home/<PI_USER>/Sejong_4IoT_OneM2M
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/default/safezone
+ExecStart=/usr/bin/python3 radar/sim_rader.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=safezone.target

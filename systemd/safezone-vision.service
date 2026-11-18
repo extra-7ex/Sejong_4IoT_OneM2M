@@ -1,0 +1,24 @@
+[Unit]
+Description=SafeZone VisionAI (카메라 → fusedTracks)
+After=network-online.target tinyiot-mn.service
+PartOf=safezone.target
+
+[Service]
+Type=simple
+User=<PI_USER>
+# 모델(yolo11n-pose_ncnn_model)과 calib/H.json이 있는 VisionAI 폴더. install.sh의 두 번째 인자
+WorkingDirectory=<VISION_DIR>
+Environment=PYTHONPATH=<VISION_DIR>/src
+Environment=PYTHONUNBUFFERED=1
+Environment="VISION_ARGS=--config config.pi.yaml --radar onem2m --output onem2m --base-url http://127.0.0.1:3000"
+EnvironmentFile=-/etc/default/safezone
+ExecStart=<VISION_PYTHON> -m vision4iot.main $VISION_ARGS
+# Ctrl+C와 같은 SIGINT로 끝내야 마지막 전송을 정리하고 끝난다.
+# 장애 시연은 'systemctl stop safezone-vision'으로 한다. 정상 종료는 다시 켜지 않고, 비정상 종료만 다시 켠다
+KillSignal=SIGINT
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=safezone.target
