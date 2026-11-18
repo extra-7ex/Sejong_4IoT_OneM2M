@@ -29,6 +29,7 @@ WARN_MM = 1000           # warn 거리 (mm): 경보만
 DANGER_MM = 500          # danger 거리 (mm): 경보 + 지게차 정지
 RANK = {'safe': 0, 'warn': 1, 'danger': 2}
 OFF_DELAY = 1.5          # 이 시간(초) 동안 계속 범위 밖이어야 해제
+STALE_S = float(os.getenv('RADAR_STALE_S', '2.0'))  # 이 시간(초) 동안 정상 프레임이 없으면 alert unknown(지게차 정지)
 CON_AS_STRING = True     # tinyIoT는 con에 문자열만 받음
 HTTP_TIMEOUT = 5         # (HTTP) tinyIoT 응답 대기 시간
 LOG_UPLOAD = True        # 진단용 로그
@@ -90,6 +91,14 @@ def worker():
 
 threading.Thread(target=worker, daemon=True).start()
 
+def mark_unknown(reason):
+    """레이더 프레임이 끊기면 판단할 수 없으므로 unknown을 기록한다. 지게차 노드는 unknown이면 멈춘다."""
+    global level
+    if LOCAL_DECISION and level != 'unknown':
+        print(f'!! 레이더 끊김: {reason}')
+        level = 'unknown'
+        set_alert('unknown')
+
 def set_alert(level, dist=None):
     print(f'>> alert: {level}' + (f' ({dist}mm)' if dist else ''))
     enqueue('AE-forklift01/alert', {'level': level, 'dist': dist, 'ttc': None}, 0)
@@ -104,7 +113,18 @@ if LOCAL_DECISION:
 last_frame, nbytes, bad = time.time(), 0, 0
 
 while True:
-    chunk = ser.read(ser.in_waiting or 1)
+    try:
+        chunk = ser.read(ser.in_waiting or 1)
+    except (serial.SerialException, OSError) as e:   # USB 변환기가 빠지는 등 포트 자체가 사라진 경우
+        mark_unknown(f'시리얼 오류 {e}')
+        time.sleep(1)
+        try:
+            ser.close(); ser.open()
+        except (serial.SerialException, OSError):
+            pass
+        continue
+    if time.time() - last_frame > STALE_S:           # 선이 빠지거나 센서가 멈춰 정상 프레임이 안 옴
+        mark_unknown(f'{time.time() - last_frame:.1f}초 동안 정상 프레임 없음')
     buf += chunk; nbytes += len(chunk)
     i = buf.find(HEAD)
     if i < 0:
@@ -144,7 +164,11 @@ while True:
     near = min((math.hypot(t['x'], t['y']) for t in targets), default=None)
     want = 'danger' if near is not None and near <= DANGER_MM else \
            'warn' if near is not None and near <= WARN_MM else 'safe'
-    if RANK[want] >= RANK[level]:     # 같거나 더 위험해짐: 바로 기록
+    if level == 'unknown':            # 레이더가 돌아옴: 지금 판단을 바로 기록
+        level, last_in = want, now
+        print('레이더 복구')
+        set_alert(level, round(near) if near is not None else None)
+    elif RANK[want] >= RANK[level]:   # 같거나 더 위험해짐: 바로 기록
         last_in = now
         if want != level:
             level = want; set_alert(level, round(near))
