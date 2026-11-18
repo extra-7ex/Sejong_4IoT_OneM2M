@@ -3,7 +3,7 @@
 
 ### Vision 조언과 작업자 alert 시험
 
-`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다. 주기 타이머 폴링이 아니라 SAFE 레이더 입력에 따른 조회다. producer `ts`가 현재 시각 기준 3초 이내이고 `cam_ok=true`인 결과에서 `camera_only` 표적에 `advice="raise"`가 있으면 최종 판정을 `WARNING`으로 올린다. Vision 입력이 없거나 오래됐거나 유효하지 않으면 레이더 판정을 유지한다. `DANGER`와 기존 `WARNING`은 Vision 조언으로 낮추지 않는다. 임계값은 `VISION_MAX_AGE_S`와 `VISION_FUTURE_SKEW_S`로 조정한다. 시계가 동기화됐다는 가정이 필요하다.
+`--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다. 주기 타이머 폴링이 아니라 SAFE 레이더 입력에 따른 조회다. producer `ts`가 현재 시각 기준 3초 이내이고 `cam_ok=true`, `radar_ok=true`인 결과에서 `camera_only` 표적에 `advice="raise"`가 있으면 최종 판정을 `WARNING`으로 올린다. `radar_ok`가 없거나 boolean true가 아니면 Vision 조언을 적용하지 않고 `vision_radar_unavailable`을 기록한다. Vision 입력이 없거나 오래됐거나 유효하지 않으면 레이더 판정을 유지한다. `DANGER`와 기존 `WARNING`은 Vision 조언으로 낮추지 않는다. 임계값은 `VISION_MAX_AGE_S`와 `VISION_FUTURE_SKEW_S`로 조정한다. 시계가 동기화됐다는 가정이 필요하다.
 
 `--mqtt-events`와 `--mqtt-alert-path /AE-worker01/alert-test`를 함께 지정하면 미리 만든 단일 시험 작업자 CNT에 상태 변경 시 `level`, `dist`(mm), `ttc`(null)를 기록한다. alert 발행은 기본적으로 꺼져 있다. events와 alert는 각자 응답과 불확실 상태를 추적한다. 같은 상태의 결과가 불확실하면 자동 재전송하지 않는다.
 

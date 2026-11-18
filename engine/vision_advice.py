@@ -19,6 +19,7 @@ def assess(cin: Any, received_mono_s: float, received_unix_s: float,
             raise ValueError("Vision con must be an object")
         timestamp = payload.get("ts")
         cam_ok = payload.get("cam_ok")
+        radar_ok = payload.get("radar_ok")
         tracks = payload.get("tracks")
         if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp):
             raise ValueError("Vision ts must be finite Unix seconds")
@@ -33,6 +34,8 @@ def assess(cin: Any, received_mono_s: float, received_unix_s: float,
             return {"status": "stale", "ri": resource.get("ri"), "age_s": round(age, 3), "raise_warning": False}
         if not cam_ok:
             return {"status": "camera_unavailable", "ri": resource.get("ri"), "age_s": round(age, 3), "raise_warning": False}
+        if radar_ok is not True:
+            return {"status": "vision_radar_unavailable", "ri": resource.get("ri"), "age_s": round(age, 3), "raise_warning": False}
         raise_warning = any(track.get("state") == "camera_only" and track.get("advice") == "raise"
                             for track in tracks)
         return {"status": "fresh", "ri": resource.get("ri"), "age_s": round(age, 3),

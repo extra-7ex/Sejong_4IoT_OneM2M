@@ -12,6 +12,7 @@ class VisionAdviceTests(unittest.TestCase):
         observation = assess(self.cin({
             "ts": 100.0,
             "cam_ok": True,
+            "radar_ok": True,
             "tracks": [{"state": "camera_only", "advice": "raise"}],
         }), received_mono_s=1.0, received_unix_s=101.0)
         decision = apply_radar_advice({"status": "SAFE", "level": "safe"}, observation)
@@ -32,6 +33,15 @@ class VisionAdviceTests(unittest.TestCase):
         for status in ("WARNING", "DANGER"):
             decision = apply_radar_advice({"status": status}, observation)
             self.assertEqual(decision["status"], status)
+
+    def test_vision_radar_must_be_explicitly_available(self):
+        for radar_ok in (False, None, "true", 1):
+            payload = {"ts": 100.0, "cam_ok": True, "tracks": [{"state": "camera_only", "advice": "raise"}]}
+            if radar_ok is not None:
+                payload["radar_ok"] = radar_ok
+            observation = assess(self.cin(payload), received_mono_s=1.0, received_unix_s=100.5)
+            self.assertEqual(observation["status"], "vision_radar_unavailable")
+            self.assertEqual(apply_radar_advice({"status": "SAFE"}, observation)["status"], "SAFE")
 
 
 if __name__ == "__main__":
