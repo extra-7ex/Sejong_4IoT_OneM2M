@@ -197,7 +197,13 @@ def check_data() -> None:
             elif "state" in con:
                 detail = f" · {con.get('state')} ({con.get('reason', '')})"
             elif "targets" in con:
-                detail = f" · 표적 {len(con.get('targets') or [])}개"
+                detail = f" · 표적 {len(con.get('targets') or [])}개" + (" (가상 레이더)" if con.get("src") == "sim" else "")
+                ts = con.get("ts")
+                if isinstance(ts, (int, float)) and age is not None and age < 10:
+                    lag = dt.datetime.now(dt.timezone.utc).timestamp() - ts
+                    if lag > 3:
+                        say(BAD, f"레이더 값이 측정보다 {lag:.0f}초 늦게 저장됨 → MN 재시작 뒤 밀린 MQTT 메시지가 재생 중일 수 있음. "
+                                 "잠시 기다렸다 다시 점검")
         stale = max_age is not None and age is not None and age > max_age
         level = WARN if stale and ("VisionAI" in name or "IPE" in name) else BAD if stale else OK
         say(level, f"{name}: {human(age)}{detail}")
