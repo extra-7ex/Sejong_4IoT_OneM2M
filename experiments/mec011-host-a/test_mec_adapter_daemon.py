@@ -5,6 +5,20 @@ from urllib.error import HTTPError
 import mec_adapter_daemon as daemon
 
 class AdapterTests(unittest.TestCase):
+    def test_discovery_reads_only_valid_requests_from_configured_container(self):
+        body = json.dumps({"m2m:uril": ["TinyIoT-MN/AE-test/requests/req-a1", "http://evil/req-b", "/TinyIoT-MN/other/requests/req-c"]}).encode()
+        request = {"request_id": "a1", "operation": "get_latest_vision"}
+        with patch.object(daemon.demo, "exchange", return_value=(200, "2000", body)) as exchange, patch.object(daemon.demo, "read_cin", return_value=request) as read:
+            self.assertEqual(list(daemon.scan("http://localhost/TinyIoT-MN/AE-test/requests")), ["a1"])
+            exchange.assert_called_once_with("http://localhost/TinyIoT-MN/AE-test/requests?fu=1&ty=4&drt=1&lim=21")
+            read.assert_called_once_with("http://localhost/TinyIoT-MN/AE-test/requests/req-a1")
+
+    def test_discovery_rejects_truncated_or_malformed_response(self):
+        for body in ({"m2m:uril": ["x"] * 21}, {"m2m:uril": "not-a-list"}):
+            with self.subTest(body=body), patch.object(daemon.demo, "exchange", return_value=(200, "2000", json.dumps(body).encode())):
+                with self.assertRaises(ValueError):
+                    list(daemon.scan("http://localhost/TinyIoT-MN/AE-test/requests"))
+
     def test_request_validation(self):
         cin = {"rn": "req-a1", "con": json.dumps({"request_id": "a1", "operation": "get_latest_vision"})}
         self.assertEqual(daemon.parse_request(cin), "a1")

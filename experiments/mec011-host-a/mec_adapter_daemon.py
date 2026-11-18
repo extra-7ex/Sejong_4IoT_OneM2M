@@ -49,17 +49,27 @@ def process(ae_url, request_id):
 
 
 def scan(requests):
-    status, rsc, raw = demo.exchange(requests + "?rcn=4")
+    # Discovery returns references only. Never dereference untrusted URLs: extract
+    # a validated name and read it from our explicitly configured container.
+    status, rsc, raw = demo.exchange(requests + "?fu=1&ty=4&drt=1&lim=21")
     if status != 200 or rsc != "2000":
-        raise ValueError("request container lookup failed")
-    container = json.loads(raw)["m2m:cnt"]
-    entries = container.get("m2m:cin", [])
-    if isinstance(entries, dict):
-        entries = [entries]
-    for cin in entries:
+        raise ValueError("request discovery failed")
+    entries = json.loads(raw)["m2m:uril"]
+    if not isinstance(entries, list) or len(entries) > 20:
+        raise ValueError("invalid or truncated request discovery result")
+    for uri in entries:
         try:
-            yield parse_request(cin)
-        except (ValueError, TypeError, KeyError) as exc:
+            if not isinstance(uri, str) or not uri or ":" in uri or "?" in uri or "#" in uri or ".." in uri.split("/"):
+                raise ValueError("invalid discovered reference")
+            parent, name = uri.rsplit("/", 1)
+            if not parent.endswith("/" + requests.rstrip("/").rsplit("/", 2)[-2] + "/requests"):
+                raise ValueError("reference is outside request container")
+            request_id = demo.identifier(name.removeprefix("req-"))
+            if name != "req-" + request_id:
+                raise ValueError("unexpected request name")
+            request = demo.read_cin(f"{requests}/{name}")
+            yield parse_request({"rn": name, "con": request})
+        except (argparse.ArgumentTypeError, ValueError, TypeError, KeyError, HTTPError) as exc:
             LOG.warning("Ignoring invalid request: %s", exc)
 
 
@@ -68,6 +78,7 @@ def main():
     parser.add_argument("--ae", required=True, type=demo.identifier)
     parser.add_argument("--pi-mn", action="store_true")
     parser.add_argument("--topic", required=True)
+    parser.add_argument("--discovery-recovery", action="store_true", help="Experimental: discover missed requests; validate on an isolated CSE first")
     parser.add_argument("--scan-interval", type=float, default=5)
     args = parser.parse_args()
     if not args.topic or "+" in args.topic or "#" in args.topic or args.scan_interval <= 0:
@@ -91,7 +102,7 @@ def main():
         if any(code.is_failure for code in reason_codes):
             LOG.error("MQTT subscription rejected")
         else:
-            LOG.info("MQTT subscription ready; request scan will reconcile")
+            LOG.info("MQTT subscription ready; recovery=%s", args.discovery_recovery)
 
     def disconnected(client, userdata, flags, reason, properties):
         LOG.warning("MQTT disconnected: %s", reason)
@@ -107,8 +118,8 @@ def main():
                 return
             cin = signal_body["nev"]["rep"]["m2m:cin"]
             pending.put_nowait(parse_request(cin))
-        except (ValueError, TypeError, KeyError, AttributeError, queue.Full) as exc:
-            LOG.warning("Notification ignored; scan will reconcile: %s", exc)
+        except (argparse.ArgumentTypeError, ValueError, TypeError, KeyError, AttributeError, queue.Full) as exc:
+            LOG.warning("Notification ignored; recovery=%s: %s", args.discovery_recovery, exc)
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                          client_id="mec-adapter-" + uuid4().hex[:12])
@@ -127,7 +138,7 @@ def main():
     next_scan = 0
     try:
         while not stop:
-            if time.monotonic() >= next_scan:
+            if args.discovery_recovery and time.monotonic() >= next_scan:
                 try:
                     for request_id in scan(requests):
                         try:

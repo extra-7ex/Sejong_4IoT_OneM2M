@@ -150,7 +150,11 @@ Pi의 실제 MN-CSE `TinyIoT-MN`에 별도 시험 AE와 `requests`, `results` CN
 
 ## 연동 AE 자동 요청 처리 시험 (2026-11-17)
 
-`mec_adapter_daemon.py`는 MQTT 알림을 받고 요청 CIN을 다시 읽어 모의 Vision 호출 결과를 기록한다. 시작과 실행 중 주기적으로 requests CNT를 조회해 누락된 요청을 확인한다. 기존 예제의 `init`으로 AE와 CNT를 만든 뒤 요청 CNT에 `nu=mqtt://127.0.0.1:1883/<고유 수신자>/json`, `enc.net=[3]`, `nct=1`인 SUB를 별도 생성한다.
+`mec_adapter_daemon.py`는 MQTT 알림을 받고 요청 CIN을 다시 읽어 모의 Vision 호출 결과를 기록한다. 기존 예제의 `init`으로 AE와 CNT를 만든 뒤 요청 CNT에 `nu=mqtt://127.0.0.1:1883/<고유 수신자>/json`, `enc.net=[3]`, `nct=1`인 SUB를 별도 생성한다.
+
+**공유 Pi 적용 보류:** 기존 버전의 복구 스캔은 `rcn=4`를 사용했는데, 팀 CSE에서 서버 종료를 유발할 수 있다는 미확인 보고가 있다. 이 버전은 해당 조회를 제거하고 복구 스캔을 기본 비활성화했다. 따라서 기본 모드에서는 중단·연결 단절·큐 초과 중 놓친 요청을 자동 복구하지 않는다. 실험 옵션 `--discovery-recovery`는 `fu=1` 발견과 개별 조회를 사용하지만 대상 tinyIoT의 격리 환경에서 검증하기 전에는 공유 CSE에 사용하지 않는다. 발견 응답이 20건을 넘거나 형식이 맞지 않으면 복구를 실패로 기록한다. `mni=20`을 넘어 삭제된 요청은 복구할 수 없다.
+
+격리된 노트북 Docker tinyIoT에서 새 발견 방식이 남겨진 요청 2건을 찾아 개별 조회하고, 모의 호출 결과 CIN 2건을 기록함을 확인했다. MQTT 알림 수신·프로세스 재시작을 포함한 종단 간 시험, 공유 Pi와 동일한 빌드 및 운영 ACP는 확인하지 않았다.
 
 ```bash
 python3 mec_adapter_daemon.py --pi-mn --ae AE-mec-auto-TEST --topic /oneM2M/req/tinyiot-mn/CmecAutoTEST/json
@@ -158,6 +162,6 @@ python3 mec_adapter_daemon.py --pi-mn --ae AE-mec-auto-TEST --topic /oneM2M/req/
 
 별도 터미널에서 기존 `demo_mec_adapter.py`의 `request` 명령으로 고유 요청을 생성한다. 결과는 `results/res-<request_id>`에서 조회한다. 한 시험 AE에 한 프로세스만 실행하며 CAdmin은 시험 전용이다.
 
-Pi MN-CSE의 별도 AE `AE-mec-auto-91e5e5ce`에서 알림으로 요청을 받고 모의 Vision 호출 결과 CIN을 확인했다. 수동 중단 중 만든 요청도 재시작 후 CNT 스캔으로 처리했다. 시험 요청 생성 응답 한 건은 timeout이었으나 동일 CIN 조회로 저장을 확인했다. 시험 프로세스는 종료했으며 시험 AE·CNT·SUB 및 CIN은 확인을 위해 남겼다.
+과거 `rcn=4` 버전에서 Pi MN-CSE의 별도 AE `AE-mec-auto-91e5e5ce`로 알림 처리와 중단 중 요청의 재시작 후 처리를 확인했다. 이것은 새 발견 방식의 검증이나 공유 서버의 안전성 확인이 아니다. 시험 요청 생성 응답 한 건은 timeout이었으나 동일 CIN 조회로 저장을 확인했다. 시험 프로세스는 종료했으며 시험 AE·CNT·SUB 및 CIN은 확인을 위해 남겼다.
 
-기존 요청·결과는 CNT의 mni=20 제한 안에서만 재확인할 수 있다. 결과 CIN이 삭제되면 같은 ID가 다시 호출될 수 있다. 동시에 여러 인스턴스를 실행하거나 임의의 외부 부작용을 갖는 서비스를 처리하도록 설계하지 않았다. 결과 저장의 응답이 불확실하면 다음 스캔에서 결과를 확인한다. SUB 검증 요청의 표준 응답, 운영 권한, 인증, 실제 Vision, 장치 재부팅 시 자동 시작은 미검증이다.
+기존 요청·결과는 CNT의 mni=20 제한 안에서만 재확인할 수 있다. 결과 CIN이 삭제되면 같은 ID가 다시 호출될 수 있다. 동시에 여러 인스턴스를 실행하거나 임의의 외부 부작용을 갖는 서비스를 처리하도록 설계하지 않았다. 결과 저장의 응답이 불확실할 때 자동 재확인은 검증된 복구 방식이 활성화된 경우에만 가능하다. SUB 검증 요청의 표준 응답, 운영 권한, 인증, 실제 Vision, 장치 재부팅 시 자동 시작은 미검증이다.
