@@ -12,6 +12,7 @@ CSE_RI = os.getenv('CSE_RI', 'tinyiot-mn')
 CSE = os.getenv('CSE_URL', f'http://{PI_IP}:3000/{CSE_NAME}')
 MQTT_HOST = os.getenv('MQTT_HOST', '127.0.0.1')
 HZ = 10
+MIN_MM = int(os.getenv('SIM_MIN_MM', '300'))       # 가장 가까이 다가가는 전방 거리(mm). 위험 반경보다 작아야 DANGER가 남
 
 if TRANSPORT == 'mqtt':
     from onem2m_mqtt import OneM2MMqtt
@@ -30,9 +31,10 @@ def post(con):
 def scene(t):                                      # 30초 시나리오 반복
     t %= 30
     if t < 3:    return None                       # 아무도 없음
-    if t < 11:   y, v = 5000 - (t - 3) * 525, -52  # 5m → 0.8m 접근
-    elif t < 14: y, v = 800, 0                     # 0.8m에서 정지
-    elif t < 20: y, v = 800 + (t - 14) * 700, 70   # 멀어짐
+    approach = (5000 - MIN_MM) / 8                 # mm/s
+    if t < 11:   y, v = 5000 - (t - 3) * approach, -round(approach / 10)  # 5m → MIN_MM 접근
+    elif t < 14: y, v = MIN_MM, 0                  # 가장 가까운 곳에서 정지
+    elif t < 20: y, v = MIN_MM + (t - 14) * 700, 70  # 멀어짐
     else:        return None                       # 다시 아무도 없음
     return {'slot': 0, 'x': 200, 'y': round(y), 'v': v}
 
