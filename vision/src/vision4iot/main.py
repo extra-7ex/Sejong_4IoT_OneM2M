@@ -120,7 +120,7 @@ def main(argv=None):
     if web_port:
         from vision4iot.webview import WebView
         try:
-            web = WebView(web_port).start()
+            web = WebView(web_port, guides=bool(wcfg.get("guides", False))).start()
             print(f"webview: http://<Pi IP>:{web_port}/", file=sys.stderr)
         except OSError as e:          # 포트가 이미 쓰이면 화면만 포기하고 판단은 계속한다
             print(f"WARN: webview port {web_port}: {e}", file=sys.stderr)
@@ -213,6 +213,9 @@ def main(argv=None):
                 draw_radar(frame, radar, cal, radar_ok)
                 draw_hud(frame, fps, det.infer_ms, len(people))
                 if web is not None:
+                    if web.guides:
+                        from vision4iot.webview import draw_guides
+                        draw_guides(frame)
                     web.update(frame)
                 if not headless:
                     cv2.imshow("vision4iot", frame)

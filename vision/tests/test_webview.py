@@ -40,6 +40,22 @@ def test_snapshot_and_stream_serve_jpeg():
         web.stop()
 
 
+def test_guides_toggle_and_draw():
+    from vision4iot.webview import draw_guides
+    web = WebView(port=0).start()
+    port = web.server.server_port
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/guides/on", timeout=5).read()
+        assert web.guides
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/guides/off", timeout=5).read()
+        assert not web.guides
+    finally:
+        web.stop()
+    frame = np.zeros((480, 640, 3), np.uint8)
+    draw_guides(frame)
+    assert frame[120].any() and frame[:, 320].any()
+
+
 def test_to_image_inverts_to_floor():
     H = np.array([[0.01, 0.0, -3.2], [0.0, -0.02, 10.0], [0.0, 0.001, 1.0]])
     cal = Calib(H=H, image_size=(640, 480))

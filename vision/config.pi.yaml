@@ -17,3 +17,4 @@ fusion:
 webview:
   enabled: true             # 화면이 없으니 브라우저 실시간 화면 http://<Pi IP>:8090 (webview.py)
   port: 8090                # 8080은 관제 화면
+  guides: true              # 카메라 각도 기준선. 촬영할 때는 화면 위 "끄기" (/guides/off)
