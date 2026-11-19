@@ -34,6 +34,29 @@ def draw_hud(frame, fps, infer_ms, n_people):
         cv2.putText(frame, text, (8, 22 + i * 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
 
+RADAR_COLOR = (0, 140, 255)   # 주황 (BGR)
+
+
+def draw_radar(frame, radar, cal, radar_ok):
+    """레이더 표적을 카메라 화면 위에 그린다(보정 H로 바닥점 → 화면). 화면 밖 표적은 가장자리에 화살표 대신 목록으로."""
+    fsize = (frame.shape[1], frame.shape[0])
+    off = []
+    for t in radar:
+        uv = cal.to_image(t.x, t.y, fsize) if cal is not None else None
+        label = f"R{t.id} {t.dist:.2f}m"
+        if uv is None or not (0 <= uv[0] < fsize[0] and 0 <= uv[1] < fsize[1]):
+            off.append(label)
+            continue
+        c = (int(round(uv[0])), int(round(uv[1])))
+        cv2.circle(frame, c, 14, RADAR_COLOR, 3)
+        cv2.putText(frame, label, (c[0] + 16, c[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.55, RADAR_COLOR, 2)
+    status = "radar ok" if radar_ok else "radar STALE" if radar_ok is False else "radar -"
+    text = f"{status} | targets {len(radar)}" + (f" | off-screen: {', '.join(off)}" if off else "")
+    y = fsize[1] - 10
+    cv2.rectangle(frame, (0, y - 20), (min(fsize[0], 12 + 9 * len(text)), fsize[1]), (0, 0, 0), -1)
+    cv2.putText(frame, text, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, RADAR_COLOR if radar_ok else (0, 0, 255), 1)
+
+
 def floor_text(f, foot_src):
     """박스가 화면 아래에서 잘려 발이 안 보이면 실제보다 멀게 나오므로 '>='로 표시."""
     x, y, d = f
@@ -50,6 +73,8 @@ def main(argv=None):
     ap.add_argument("--radar", choices=["sim", "onem2m", "none"], help="config의 radar.source 대신 (sim = 카메라 위치로 가짜 레이더)")
     ap.add_argument("--output", choices=["stdout", "jsonl", "onem2m", "none"], help="config의 output.mode 대신")
     ap.add_argument("--base-url", help="CSE 주소, 예 http://127.0.0.1:3000 (config onem2m.base_url 대신)")
+    ap.add_argument("--web", type=int, metavar="PORT",
+                    help="브라우저 실시간 화면 포트 (config webview.enabled·port 대신, 0이면 끔)")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -89,6 +114,16 @@ def main(argv=None):
     out_mode = args.output or cfg["output"]["mode"]
     pub = None if out_mode == "none" else make_publisher(cfg, out_mode, args.base_url)
     in_view = cal.in_view if cal is not None else (lambda x, y: False)   # 보정 없으면 유령 판정 안 함
+    wcfg = cfg.get("webview") or {}
+    web_port = args.web if args.web is not None else (int(wcfg.get("port", 8090)) if wcfg.get("enabled") else 0)
+    web = None
+    if web_port:
+        from vision4iot.webview import WebView
+        try:
+            web = WebView(web_port).start()
+            print(f"webview: http://<Pi IP>:{web_port}/", file=sys.stderr)
+        except OSError as e:          # 포트가 이미 쓰이면 화면만 포기하고 판단은 계속한다
+            print(f"WARN: webview port {web_port}: {e}", file=sys.stderr)
     frame_no, last_tracks, radar_ok = 0, [], None
 
     fps, frames, t_win = 0.0, 0, time.perf_counter()
@@ -158,7 +193,8 @@ def main(argv=None):
                         for p, r in zip(people, raw):
                             print(f"    id {p.id} raw={r.label} {r.debug_text()}", flush=True)
 
-            if not headless:
+            show = not headless or (web is not None and web.wanted)   # 보는 사람이 없으면 그리지 않는다
+            if show:
                 notes = []
                 by_id = {t["id"]: t for t in last_tracks}
                 for p, s, r, f, (_, src_) in zip(people, postures, raw, floor, feet):
@@ -174,14 +210,20 @@ def main(argv=None):
                 draw_people(frame, people, pp.kp_min_conf, notes)
                 for fp, src_ in feet:
                     cv2.circle(frame, tuple(np.round(fp).astype(int)), 6, FOOT_COLOR[src_], 2)
+                draw_radar(frame, radar, cal, radar_ok)
                 draw_hud(frame, fps, det.infer_ms, len(people))
-                cv2.imshow("vision4iot", frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
+                if web is not None:
+                    web.update(frame)
+                if not headless:
+                    cv2.imshow("vision4iot", frame)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
     except KeyboardInterrupt:
         pass
     finally:
         src.close()
+        if web is not None:
+            web.stop()
         if radar_in is not None:
             radar_in.stop()
         if pub is not None:

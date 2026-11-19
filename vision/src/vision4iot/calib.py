@@ -65,6 +65,19 @@ class Calib:
         u, v = p[0] / p[2], p[1] / p[2]
         return margin_px <= u < w - margin_px and margin_px <= v < h - margin_px
 
+    def to_image(self, x, y, frame_size=None):
+        """바닥점 (x, y) m → 화면 (u, v) px (frame_size 기준). 카메라 뒤로 넘어간 점은 None. 화면 밖일 수 있다."""
+        Hinv = np.linalg.inv(self.H)
+        w, h = self.image_size
+        ref = Hinv @ np.append(project(self.H, [[w / 2, h - 1]])[0], 1.0)
+        p = Hinv @ np.array([x, y, 1.0])
+        if p[2] * np.sign(ref[2]) <= 1e-12:
+            return None
+        u, v = p[0] / p[2], p[1] / p[2]
+        if frame_size is not None and tuple(frame_size) != (w, h):
+            u, v = u * frame_size[0] / w, v * frame_size[1] / h
+        return float(u), float(v)
+
     def check_frame_size(self, frame_size):
         """맞지 않으면 경고 문장, 괜찮으면 None."""
         cw, ch = self.image_size

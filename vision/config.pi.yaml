@@ -15,4 +15,5 @@ fusion:
   camera_fov_deg: 48
 
 webview:
-  enabled: true             # 화면이 없으니 브라우저 디버그 화면 (webview.py 만들면)
+  enabled: true             # 화면이 없으니 브라우저 실시간 화면 http://<Pi IP>:8090 (webview.py)
+  port: 8090                # 8080은 관제 화면
