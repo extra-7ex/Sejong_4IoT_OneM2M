@@ -240,6 +240,15 @@ def check_writer(states: dict[str, str]) -> None:
         say(BAD, f"그룹 {group}에 구성원이 없음 → python3 onem2m/alarm_group.py")
     else:
         say(OK, f"alert 경로: 그룹 {group}/fopt → 경보 장치 {grp.get('cnm')}곳에 한 번에 (fan-out)")
+        try:
+            exe = subprocess.run(["systemctl", "show", "tinyiot-mn", "-p", "ExecStart", "--value"],
+                                 capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            exe = ""
+        if "foptnotify" not in exe:
+            # 원본 tinyIoT는 fopt로 구성원에 만든 CIN에 구독 알림을 보내지 않는다 → ESP가 경보를 못 받음 (11/19 확인)
+            say(BAD, "원본 tinyIoT는 그룹 fopt로 쓴 경보를 ESP에 알리지 않음 → 패치된 MN(onem2m/tinyiot-patches/"
+                     "fopt-notify.patch)으로 켜거나, alert 경로를 /AE-forklift01/alert로")
 
 
 def http_target(nu: str) -> Optional[tuple[str, int]]:

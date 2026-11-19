@@ -1,0 +1,12 @@
+--- a/source/server/onem2m.c	2026-10-13 21:39:06.000000000 +0900
++++ b/source/server/onem2m.c	2026-11-19 22:16:10.361961913 +0900
+@@ -1333,6 +1333,9 @@
+             }
+         
+ 			rsc = handle_onem2m_request(memberReq, target_rtnode);
++			/* fan-out: notify the member's own subscribers too (route() only notifies the group itself) */
++			if (memberReq->op != OP_DELETE && !memberReq->errFlag && target_rtnode)
++				notify_via_sub(memberReq, target_rtnode);
+ 			json = o2pt_to_json(memberReq);
+             if (json)
+             {
