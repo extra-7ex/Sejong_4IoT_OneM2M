@@ -66,7 +66,13 @@ bool registerNode() {
   ae["srv"].add("3");
   ae["lbl"].add("type:worker-alarm");                   // MEC 경보 서비스가 이 라벨로 노드를 찾음
   ae["poa"].add("http://" + myIp + ":80/notify");
-  if (!ok(m2m("POST", "", 2, js(d)))) return false;
+  int aeCode = m2m("POST", "", 2, js(d));
+  if (!ok(aeCode)) return false;
+  if (aeCode == 409) {                                  // 이미 등록됨: 네트워크가 바뀌었을 수 있으니 poa를 지금 IP로 고침
+    d.clear();
+    d["m2m:ae"]["poa"].add("http://" + myIp + ":80/notify");
+    m2m("PUT", "/" + AE, 0, js(d));
+  }
 
   // 2) 접근 권한: 엔진도 이 노드의 alert에 쓸 수 있게
   d.clear();

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 import urllib.request
 import uuid
@@ -78,4 +79,23 @@ class HTTPAlertWriter:
         self.http, self.path = http, path
 
     def create_event_cin(self, alert: dict) -> dict:
-        return self.http.create_cin(self.path, alert)
+        result = self.http.create_cin(self.path, alert)
+        check_fanout(result)
+        return result
+
+
+def check_fanout(result: dict) -> None:
+    """A path ending in /fopt is a oneM2M group fan-out (onem2m/alarm_group.py): the CSE answers 2000 with
+    one m2m:rsp per member container. Raise only when no member stored the alert, so one switched-off
+    zone light cannot block the forklift stop; partial failures are logged."""
+    agr = (result.get("response") or {}).get("m2m:agr") if isinstance(result, dict) else None
+    if not isinstance(agr, dict):
+        return
+    rsps = agr.get("m2m:rsp") or []
+    ok = [r for r in rsps if str(r.get("rsc")) in ("2000", "2001")]
+    failed = [f"{r.get('to')}={r.get('rsc')}" for r in rsps if r not in ok]
+    if not ok:
+        raise RuntimeError(f"group fan-out reached no member: {failed or 'no members'}")
+    if failed:
+        logging.getLogger(__name__).warning("group fan-out: %d/%d members failed: %s",
+                                            len(failed), len(rsps), ", ".join(failed))

@@ -8,8 +8,9 @@
   2. 네트워크: Pi IP, tinyIoT SERVER_IP와 일치하는지, ESP에 넣을 CSE 주소
   3. 장치: 레이더 직렬 포트, USB 카메라
   4. 데이터: radar·alert·events·fusedTracks·IPE status 최신 CIN이 얼마나 지났는지
-  5. 경보 작성자: 레이더 노드와 엔진 중 하나만 alert를 쓰는지 (/etc/default/safezone)
-  6. 구독: alert에 걸린 HTTP 구독의 ESP가 응답하는지
+  5. 경보 작성자: 레이더 노드와 엔진 중 하나만 alert를 쓰는지 (/etc/default/safezone),
+     그룹(/grp-safezone-alarms/fopt)으로 보내면 그룹과 구성원이 있는지
+  6. 구독: HTTP 구독의 ESP가 응답하는지 (nu가 AE-ID면 그 AE의 poa 주소로 확인)
 
   6이 중요하다. 꺼진 ESP로 가는 HTTP 구독이 남아 있으면 alert CIN을 쓸 때마다 tinyIoT가
   알림 전송에 막혀 약 27초 동안 멈춘다(그동안 다른 요청도 처리하지 못함). --fix로 지우고,
@@ -225,6 +226,20 @@ def check_writer(states: dict[str, str]) -> None:
         say(OK, "엔진 모드: 위험 엔진이 alert를 씀 (카메라 결합 판단이 지게차까지 감)")
     else:
         say(OK, "기본 모드: 레이더 노드가 거리로 alert를 씀 (카메라 결합은 관제 화면에만)")
+    m = re.search(r"--alert-path\s+(\S+)", env.get("ENGINE_ARGS", ""))
+    target = (m.group(1) if engine_alert and m else "/" + env.get("RADAR_ALERT_PATH", "AE-forklift01/alert").strip("/"))
+    if "/fopt" not in target:
+        say(OK, f"alert 경로: {target}")
+        return
+    group = target.split("/fopt")[0]
+    status, body = request(MN, group)
+    grp = (body or {}).get("m2m:grp", {}) if status == 200 else {}
+    if not grp:
+        say(BAD, f"alert를 그룹 {group}/fopt로 보내는데 그룹이 없음 → python3 onem2m/alarm_group.py")
+    elif not grp.get("cnm"):
+        say(BAD, f"그룹 {group}에 구성원이 없음 → python3 onem2m/alarm_group.py")
+    else:
+        say(OK, f"alert 경로: 그룹 {group}/fopt → 경보 장치 {grp.get('cnm')}곳에 한 번에 (fan-out)")
 
 
 def http_target(nu: str) -> Optional[tuple[str, int]]:
@@ -242,6 +257,19 @@ def reachable(host: str, port: int) -> bool:
         return False
 
 
+def ae_poas(base_name: str) -> dict[str, list[str]]:
+    """AE-ID(aei) → poa 목록. 작업자 ESP는 구독 nu에 자기 AE-ID를 넣으므로 실제 주소는 poa에 있다."""
+    out: dict[str, list[str]] = {}
+    status, body = request(MN, "?fu=1&ty=2")
+    for uri in (body or {}).get("m2m:uril", []) if status == 200 else []:
+        path = "/" + uri.split("/", 1)[1] if uri.startswith(base_name + "/") else "/" + uri
+        status, ae = request(MN, path)
+        ae = (ae or {}).get("m2m:ae", {}) if status == 200 else {}
+        if ae.get("aei"):
+            out[ae["aei"]] = ae.get("poa") or []
+    return out
+
+
 def check_subscriptions(fix: bool) -> None:
     print("6. 구독 (꺼진 ESP로 가는 HTTP 구독은 MN을 약 27초씩 멈추게 한다)")
     status, body = request(MN, "?fu=1&ty=23")
@@ -250,23 +278,32 @@ def check_subscriptions(fix: bool) -> None:
         return
     base_name = MN.rstrip("/").rsplit("/", 1)[-1]
     http_subs = 0
+    poa_of: Optional[dict[str, list[str]]] = None
     for uri in body.get("m2m:uril", []):
         path = "/" + uri.split("/", 1)[1] if uri.startswith(base_name + "/") else "/" + uri
         status, sub = request(MN, path)
         if status != 200 or not sub:
             continue
         for nu in sub.get("m2m:sub", {}).get("nu", []):
-            target = http_target(nu)
+            target, shown = http_target(nu), nu
+            if target is None and "/" not in nu and ":" not in nu:
+                # nu가 AE-ID(예: Cworker01)면 알림은 그 AE의 poa로 간다 → poa 주소를 확인한다
+                if poa_of is None:
+                    poa_of = ae_poas(base_name)
+                poas = [p for p in poa_of.get(nu, []) if http_target(p)]
+                if not poas:
+                    continue
+                target, shown = http_target(poas[0]), f"{nu} (poa {poas[0]})"
             if target is None:
                 continue
             http_subs += 1
             if reachable(*target):
-                say(OK, f"{path} → {nu} 응답함")
+                say(OK, f"{path} → {shown} 응답함")
             elif fix:
                 status, _ = request(MN, path, "DELETE")
-                say(OK if status in (200, 202, 204) else BAD, f"{path} → {nu} 응답 없음 → 삭제 (HTTP {status})")
+                say(OK if status in (200, 202, 204) else BAD, f"{path} → {shown} 응답 없음 → 삭제 (HTTP {status})")
             else:
-                say(BAD, f"{path} → {nu} 응답 없음 (--fix로 삭제하고 ESP를 켠 뒤 다시 구독)")
+                say(BAD, f"{path} → {shown} 응답 없음 (--fix로 삭제하고 ESP를 켠 뒤 다시 구독)")
     status, alert_children = request(MN, "/AE-forklift01/alert?fu=1&ty=23")
     subs = (alert_children or {}).get("m2m:uril", []) if status == 200 else []
     if not subs:

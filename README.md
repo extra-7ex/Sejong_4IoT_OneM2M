@@ -82,22 +82,27 @@ Vision AI는 카메라 정보와 레이더를 융합해 `fusedTracks`를 발행�
 ```text
 TinyIoT-MN                   [CSEBase, 제안]
 ├─ defaultACP                [ACP]
-├─ AE-forklift01             [AE]
-│  ├─ radar                  [CNT] radar CIN
-│  └─ alert                  [CNT] 장치용 경보, 작성 주체 확인
+├─ grp-safezone-alarms       [GRP] 경보 장치 그룹 (lbl 검색으로 구성, /fopt 한 번 쓰기 → 모든 alert)
+├─ AE-forklift01             [AE]  lbl safezone:forklift, zone:A
+│  ├─ radar                  [CNT] radar CIN (lbl safezone:sensor, sensor:ld2450, unit:mm)
+│  └─ alert                  [CNT] 지게차 정지 경보 (lbl safezone:alarm)
+├─ AE-worker01               [AE]  작업자 ESP, lbl type:worker-alarm
+│  └─ alert                  [CNT] 작업자 경보 (그룹 구성원)
 ├─ AE-riskengine             [AE]
 │  └─ events                 [CNT] 위험 판단 기록
 ├─ AE-VisionAI               [AE]
 │  └─ fusedTracks            [CNT] Vision 융합 결과
 ├─ AE-zonealarm01            [AE]
-│  └─ alert                  [CNT] 경보기 구상
+│  └─ alert                  [CNT] 구역 경광등 (lbl safezone:alarm, 그룹 구성원)
 └─ AE-camera01               [AE]
    └─ detect                 [CNT] 기존 카메라 구상
 ```
 
 실제 CNT·SUB·ACP 존재와 데이터 접근 권한은 실행 중인 서버에서 조회해야 한다. `mni`는 보관할 CIN 수의 제한이다. 표적이 없는 상태에서 실제 업로더가 빈 `targets`를 주기적으로 보내는지는 확인 중이다.
 
-주요 리소스 유형: CSEBase(ty 5)는 서버 최상위, ACP(1)는 접근 정책, AE(2)는 애플리케이션, CNT(3)는 데이터 컨테이너, CIN(4)은 개별 데이터, SUB(23)는 변경 알림 설정이다.
+주요 리소스 유형: CSEBase(ty 5)는 서버 최상위, ACP(1)는 접근 정책, AE(2)는 애플리케이션, CNT(3)는 데이터 컨테이너, CIN(4)은 개별 데이터, GRP(9)는 그룹, SUB(23)는 변경 알림 설정이다.
+
+리소스에는 `lbl`(라벨)을 붙여 이름을 몰라도 검색으로 찾게 했다(`?fu=1&lbl=safezone:alarm`). 경보 장치는 이 검색으로 그룹 `grp-safezone-alarms`에 묶이고, 경보 작성자는 그룹의 fanOutPoint(`/fopt`)에 한 번 쓴다. 만드는 법은 `python3 onem2m/alarm_group.py`, 설명은 [시연방법.md G절](시연방법.md).
 
 ### 4.2 구독 흐름
 
@@ -147,7 +152,7 @@ Sejong_4IoT_OneM2M/
 ├─ radar/                       레이더: LD2450 업로더(radar_node.py), 가상 레이더(sim_rader.py)
 ├─ engine/                      위험 판단 엔진: 거리·CPA, 카메라 결합 규칙, SAFE 해제 지연
 ├─ vision/                      VisionAI: 카메라 사람·자세 → 바닥 좌표 → 레이더와 결합 → fusedTracks (AGPL-3.0)
-├─ onem2m/                      MN→IN 브리지, MEC 생존 확인 IPE, 지연 측정, 구독·CSE 스크립트
+├─ onem2m/                      MN→IN 브리지, MEC 생존 확인 IPE, 경보 장치 그룹(lbl+grp), 지연 측정, 구독·CSE 스크립트
 ├─ dashboard/                   관제 대시보드 (MN 실시간, IN 이력, VisionAI 상태)
 ├─ esp8266/                     지게차 노드(alert_node), 작업자 노드(worker_node), MQTT 판
 ├─ systemd/                     시연 서비스 (safezone.target 아래 레이더·엔진·브리지·대시보드·IPE·VisionAI)

@@ -27,6 +27,9 @@ UPLOAD_INTERVAL = 0.5    # radar 업로드 최소 간격 (초)
 # True: 이 노드가 거리만 보고 alert를 직접 기록 (기본). False: 위험 엔진이 alert를 기록한다
 # (엔진을 --alert-path /AE-forklift01/alert로 켤 때 RADAR_LOCAL_DECISION=0. alert 작성자는 하나만 둔다)
 LOCAL_DECISION = os.getenv('RADAR_LOCAL_DECISION', '1') != '0'
+# alert를 쓸 곳. 경보 장치 그룹(onem2m/alarm_group.py)을 만들었으면 grp-safezone-alarms/fopt로 바꾸면
+# MN이 지게차·작업자·구역 경보 컨테이너에 같은 alert를 한 번에 만든다(fan-out)
+ALERT_PATH = os.getenv('RADAR_ALERT_PATH', 'AE-forklift01/alert').strip('/')
 WARN_MM = 1000           # warn 거리 (mm): 경보만
 DANGER_MM = 500          # danger 거리 (mm): 경보 + 지게차 정지
 RANK = {'safe': 0, 'warn': 1, 'danger': 2}
@@ -103,7 +106,7 @@ def mark_unknown(reason):
 
 def set_alert(level, dist=None):
     print(f'>> alert: {level}' + (f' ({dist}mm)' if dist else ''))
-    enqueue('AE-forklift01/alert', {'level': level, 'dist': dist, 'ttc': None}, 0)
+    enqueue(ALERT_PATH, {'level': level, 'dist': dist, 'ttc': None}, 0)
 
 if TRANSPORT == 'mqtt':
     print(f'MQTT {MQTT_HOST}:{MQTT_PORT} → {CSE_NAME} (토픽 /oneM2M/req/{ORIGIN}/{CSE_RI}/json)')
