@@ -77,13 +77,16 @@
   </section>
 
   <section class="panel">
-    <h2>위험 구역 맵 <span class="muted" style="text-transform:none;letter-spacing:0" id="radar-age"></span></h2>
+    <h2>위험 구역 맵 <span class="muted" style="text-transform:none;letter-spacing:0" id="radar-age"></span>
+      <select id="map-range" style="float:right" title="지도 범위">
+        <option value="auto">범위 자동</option><option value="2">2 m</option><option value="3">3 m</option><option value="6">6 m</option>
+      </select></h2>
     <canvas id="map" width="760" height="560"></canvas>
     <div class="legend">
       <span><i style="background:var(--accent)"></i>레이더 표적</span>
       <span><i style="background:transparent;border:2px solid #c9d1dc"></i>Vision 추적</span>
       <span><i style="background:rgba(229,72,77,.55);border-radius:2px"></i>핫스팟 (선택 기간 위험 이벤트)</span>
-      <span>원: 위험 <b class="DANGER" id="lg-d">1.5 m</b> · 주의 <b class="WARNING" id="lg-w">3.0 m</b></span>
+      <span>원: 위험 <b class="DANGER" id="lg-d">0.5 m</b> · 주의 <b class="WARNING" id="lg-w">1 m</b></span>
     </div>
   </section>
 
@@ -114,7 +117,7 @@
 const $ = id => document.getElementById(id);
 const COLORS = { SAFE: '#2fb36d', WARNING: '#f2a516', DANGER: '#e5484d', UNKNOWN: '#6b7480' };
 const SRC_LABEL = { radar: '레이더', events: '위험 판단', fused: 'Vision', alert: '경보(alert)', in_events: 'IN 이력' };
-let latest = null, hotspots = [], params = { warning_distance_m: 3, danger_distance_m: 1.5 };
+let latest = null, hotspots = [], params = { warning_distance_m: 1, danger_distance_m: 0.5 };   // 첫 판정 전 기본값, 이후 RiskEngine 값 사용
 
 const fmt = (v, unit, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? '-' : `${Number(v).toFixed(d)} ${unit}`;
 const ago = s => s === null || s === undefined ? '-' : s < 60 ? `${s.toFixed(0)}초 전` : s < 3600 ? `${(s/60).toFixed(0)}분 전` : `${(s/3600).toFixed(1)}시간 전`;
@@ -173,7 +176,10 @@ function renderState(s) {
 
 function drawMap() {
   const cv = $('map'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
-  const rangeM = 6, ox = W / 2, oy = H - 30, scale = (H - 50) / rangeM;   // 레이더 원점: 아래 가운데, y = 전방
+  // 지도 범위: 선택값, 자동이면 주의 반경의 2배(최소 2 m, 최대 6 m)
+  const sel = $('map-range')?.value || 'auto';
+  const rangeM = sel === 'auto' ? Math.min(6, Math.max(2, Math.ceil(params.warning_distance_m * 2))) : Number(sel);
+  const ox = W / 2, oy = H - 30, scale = (H - 50) / rangeM;   // 레이더 원점: 아래 가운데, y = 전방
   const P = (xm, ym) => [ox + xm * scale, oy - ym * scale];
   g.clearRect(0, 0, W, H);
   // 시야각 ±60°
@@ -188,7 +194,8 @@ function drawMap() {
   }
   // 거리 링
   g.lineWidth = 1;
-  for (let m = 1; m <= rangeM; m++) { g.strokeStyle = '#262c35'; g.beginPath(); g.arc(ox, oy, m * scale, Math.PI, 2 * Math.PI); g.stroke();
+  const step = rangeM <= 3 ? 0.5 : 1;
+  for (let m = step; m <= rangeM + 1e-9; m += step) { g.strokeStyle = '#262c35'; g.beginPath(); g.arc(ox, oy, m * scale, Math.PI, 2 * Math.PI); g.stroke();
     g.fillStyle = '#5b6470'; g.font = '11px system-ui'; g.fillText(m + 'm', ox + 4, oy - m * scale + 12); }
   for (const [r, c] of [[params.warning_distance_m, COLORS.WARNING], [params.danger_distance_m, COLORS.DANGER]]) {
     g.strokeStyle = c; g.setLineDash([6, 5]); g.lineWidth = 1.5; g.beginPath(); g.arc(ox, oy, r * scale, Math.PI, 2 * Math.PI); g.stroke(); g.setLineDash([]);
@@ -241,6 +248,7 @@ async function refreshFast() {
 }
 
 $('range').onchange = refreshSlow;
+$('map-range').onchange = drawMap;
 refreshFast(); refreshSlow();
 $('reset-btn').onclick = async () => {
   const btn = $('reset-btn'); btn.disabled = true;
