@@ -128,7 +128,7 @@ WSL IP는 재부팅 때 바뀔 수 있으므로 부팅 후마다 2를 다시 실
 
 Pi의 운영 MEC IPE는 MEC011에서 Vision 서비스를 발견하고 등록된 oneM2M 주소의 최신 `fusedTracks`와 `cam_ok`를 확인해 MN-CSE에 데이터 상태를 기록한다. `ACTIVE`인 서비스 등록도 데이터가 오래되면 데이터 상태는 `INACTIVE`일 수 있다. VisionAI를 잠시 실행한 시험에서 데이터 상태가 `INACTIVE → ACTIVE`로 바뀌었고, 시험 후 VisionAI를 다시 중지했다.
 
-주의: 현재 GitHub 제출 브랜치의 `onem2m/mec_ipe.py`는 Pi에 적용된 discovery 변경을 아직 포함하지 않는다. 아래 저장소 명령만 다시 실행해도 운영 discovery 기능이 배포되는 것은 아니다. 코드 브랜치가 저장소에 동기화된 뒤 설치·재시작 절차를 갱신한다.
+MEC011 발견 코드는 저장소 `onem2m/mec_ipe.py`에 포함돼 있다. 아래 일반 실행 명령의 기본 동작은 알려진 CIN 경로를 직접 조회하는 것이다. 발견을 사용하려면 아래 MEC011 설정을 지정해야 한다. Pi에서는 별도 설치 파일과 systemd drop-in으로 발견 모드를 실행한다. [Pi 운영 설정](pi-operating-state.md#mec-및-vision)을 참고한다.
 
 ```bash
 # 저장소 루트에서 (Pi)
@@ -141,7 +141,7 @@ curl -s -H 'X-M2M-Origin: CAdmin' -H 'X-M2M-RI: chk' -H 'X-M2M-RVI: 3' -H 'Accep
 
 - 기록 위치: `AE-mecIPE/MecServices/<서비스>/status`. 상태가 바뀔 때와 10초마다 CIN을 쓴다. `la`의 `ts`가 30초 넘게 오래되면 IPE가 멈춘 것으로 보고 UNKNOWN으로 다룬다.
 - 다른 서비스: `IPE_SERVICE=<이름> IPE_PROBE=http://<주소>/health` (2xx면 성공) 또는 `IPE_PROBE=cin:/<AE>/<CNT>/la`.
-- MEC011 설정: `IPE_MEC_BASE`는 조회할 등록부, `IPE_MEC_SERVICE`는 찾을 서비스 이름, `IPE_DISCOVERY_CSE_BASE`는 발견 주소를 제한할 CSE다. 허용 CSE 값을 생략하면 `IPE_MN_BASE`를 사용한다. 현재 서비스 엔트리는 VisionAI의 실제 `fusedTracks` 주소로 수동 등록했다. 중복 서비스 이름은 임의 선택하지 않고 허용 CSE 밖 주소는 사용하지 않는다. 데이터 stale이면 `INACTIVE`, 새 데이터가 확인되면 `ACTIVE`로 쓴다. 발견 코드는 운영 Pi IPE에 적용됐지만 소스 브랜치 `codex/mec011-live-discovery`는 아직 GitHub에 push되지 않았다. 해당 브랜치의 단위 시험 17개 통과 보고가 있다. 원격 CSE 조회와 자동 서비스 등록·주소 갱신, 여러 서비스 중 위치·부하 기반 선택은 검증·구현하지 않았다.
+- MEC011 설정: `IPE_PROBE=mec-cin`으로 발견을 켜고, `IPE_MEC_BASE`는 조회할 등록부, `IPE_MEC_SERVICE`는 찾을 서비스 이름, `IPE_DISCOVERY_CSE_BASE`는 발견 주소를 제한할 CSE다. 허용 CSE 값을 생략하면 `IPE_MN_BASE`를 사용한다. Pi의 시험 서비스 엔트리는 VisionAI의 실제 `fusedTracks` 주소로 수동 등록했다. 중복 서비스 이름은 임의 선택하지 않고 허용 CSE 밖 주소는 사용하지 않는다. 데이터 stale이면 `INACTIVE`, 새 데이터가 확인되면 `ACTIVE`로 쓴다. 단위 시험 17개가 통과했다. 원격 CSE 조회와 자동 서비스 등록·주소 갱신, 여러 서비스 중 위치·부하 기반 선택은 검증·구현하지 않았다.
 - 주요 환경 변수: `IPE_PERIOD_S`(1.0), `IPE_FAIL_N`(3), `IPE_MAX_AGE_S`(2.0), `IPE_HEARTBEAT_S`(10), `IPE_READ_ORIGIN`(CAdmin), `IPE_ORIGIN`(CmecIPE).
 - 시험: `python3 -m unittest onem2m.test_mec_ipe`
 - Pi 시험(2026-11-18, 실제 MN-CSE, `bench_bus.mp4` 녹화 영상으로 돌린 실제 VisionAI 약 5 FPS): 꺼진 상태로 시작하면 2초 뒤 INACTIVE, VisionAI 시작 후 약 10초(모델 로딩 포함) 뒤 ACTIVE. VisionAI를 Ctrl+C로 멈추면 마지막 프레임 4.2–4.7초 뒤 INACTIVE, 다시 켜면 9.7초 뒤 ACTIVE. 같은 Pi에서 VisionAI를 두 개 돌려 약 1.6 FPS로 떨어졌을 때 잘못된 INACTIVE가 1초 동안 한 번 나왔으므로, 프레임이 2초 넘게 끊기는 환경이면 `IPE_MAX_AGE_S`를 늘린다.
