@@ -13,7 +13,7 @@ A 24 GHz mmWave radar (HLK-LD2450) and a camera AI (YOLO11n-pose on a Logitech C
 
 ![SafeZone oneM2M and MEC system architecture](docs/safezone-system-architecture-en.png)
 
-The figure shows the IN-routed dashboard configuration tested separately after the recorded demonstration. Port 18082 was used for the initial test; the current manually started dashboard uses port 8080. The `grp-safezone-alarms` resource is a oneM2M group; `fopt` is its virtual fan-out point. The zone alert is a resource without a physical alarm device.
+The figure shows the tested IN-routed dashboard configuration. Port 18082 was used for the initial test; the current manually started dashboard uses port 8080. The `grp-safezone-alarms` resource is a oneM2M group; `fopt` is its virtual fan-out point. The zone alert is a resource without a physical alarm device.
 
 ### What the demo shows
 
@@ -49,7 +49,7 @@ The figure shows the IN-routed dashboard configuration tested separately after t
 | [`vision/`](vision/) | VisionAI: person + pose → floor coordinates → fusion with radar → `fusedTracks` (AGPL-3.0) |
 | [`engine/`](engine/) | Risk engine: distance + CPA (`t_cpa`, `d_cpa`), camera fusion rules, UNKNOWN on stale data |
 | [`onem2m/`](onem2m/) | Alarm group, MN→IN bridge, MEC IPE, latency tool, tinyIoT patches |
-| [`dashboard/`](dashboard/) | Monitoring dashboard (IN-routed MN state and IN history tested; the recorded demo used direct MN state reads) |
+| [`dashboard/`](dashboard/) | Monitoring dashboard (MN current state through IN and IN event history) |
 | [`esp8266/`](esp8266/) | Forklift alarm node (SG90 fork + buzzer) and worker tag firmware |
 | [`systemd/`](systemd/), [`tools/preflight.py`](tools/preflight.py) | Pi services and the pre-demo check |
 | [`docs/`](docs/) | Architecture, data formats, deployment record, wiring diagrams |
@@ -101,7 +101,18 @@ Copy `secrets.example.h` to `secrets.h` (Wi-Fi and the Pi MN-CSE address), then 
 
 **5. Dashboard**
 
-`DASH_CSE_BASE=http://<PI_IP>:3000/TinyIoT-MN DASH_IN_BASE=http://<IN_IP>:<PORT>/TinyIoT python3 -m dashboard.server --port 8080` shows live state from the MN-CSE and history from the IN-CSE ([`dashboard/README.md`](dashboard/README.md)).
+Use the registered dashboard AE and the IN-routed MN address. Set the IN address reachable from the dashboard host and use the actual MN CSE-ID and CSEBase name:
+
+```bash
+DASH_CSE_BASE=http://<IN_IP>:<PORT>/~/tinyiot-mn/TinyIoT-MN \
+DASH_IN_BASE=http://<IN_IP>:<PORT>/TinyIoT \
+DASH_ORIGIN=Cdashboard DASH_IN_BACKFILL=0 \
+DASH_MN_HEALTH_PATH=/AE-forklift01/radar/la \
+DASH_IN_HEALTH_PATH=/AE-safezone/events/la \
+python3 -m dashboard.server --port 8080
+```
+
+The configured AE needs RETRIEVE permissions on the MN resources and IN history. With backfill disabled, the dashboard reads the latest history entry and subsequent entries, not the full past history. See [`dashboard/README.md`](dashboard/README.md) for the trial and limitations.
 
 ### License
 
@@ -142,7 +153,7 @@ Apache 2.0, except `vision/` (AGPL-3.0, because it uses Ultralytics YOLO11). Det
 
 ## 2. 확인된 시스템 구성
 
-Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 정리했다. tinyIoT **MN-CSE**가 센서 입력과 경보를 연결하고, RiskEngine이 현장에서 위험을 판단한다. MEC 연동 AE는 서비스 이름으로 Vision 데이터 서비스를 발견해 허용된 oneM2M CSE에서 데이터를 조회한다. Pi에서는 수동 등록한 서비스 한 개로 이 경로를 확인했다. 위 영어 그림은 후속 IN 경유 관제 시험을, 아래 Mermaid 그림은 기존 시연의 MN 직접 조회 경로를 나타낸다.
+Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 정리했다. tinyIoT **MN-CSE**가 센서 입력과 경보를 연결하고, RiskEngine이 현장에서 위험을 판단한다. MEC 연동 AE는 서비스 이름으로 Vision 데이터 서비스를 발견해 허용된 oneM2M CSE에서 데이터를 조회한다. Pi에서는 수동 등록한 서비스 한 개로 이 경로를 확인했다. 위 그림과 아래 Mermaid는 모두 IN 경유 관제 구성을 나타낸다.
 
 ```mermaid
 flowchart LR
@@ -173,6 +184,7 @@ flowchart LR
   end
 
   RIPE -->|"Mca · MQTT CIN 생성"| RAD
+  VIS -->|"Mca · HTTP radar/la 조회"| RAD
   VIS -->|"Mca · HTTP CIN 생성"| FUSED
   RE -->|"Mca · HTTP polling"| RAD
   RE -->|"Mca · HTTP polling"| FUSED
@@ -184,15 +196,15 @@ flowchart LR
   IPE -->|"Mca · HTTP 최신 CIN 조회"| FUSED
   IPE -->|"Mca · HTTP 상태 기록"| STATUS
   CSE -->|"Mcc · CSE 등록"| IN["노트북 IN-CSE"]
+  IN -->|"Mcc · 원격 현재 상태 조회"| CSE
   BR -->|"Mca · HTTP 조회"| EVENT
   BR -->|"Mca · HTTP 이력 기록"| IN
-  DASH["노트북 대시보드"] -->|"Mca · HTTP 현재 상태 조회"| CSE
-  DASH -->|"Mca · HTTP 이력 조회"| IN
+  DASH["노트북 대시보드<br/>관제 AE Cdashboard"] -->|"Mca · HTTP 현재 상태와 이력 조회"| IN
 ```
 
 그림의 CNT와 그룹은 MN-CSE 안의 리소스다. 그룹은 세 alert CNT의 멤버 참조를 보유하며, zone은 물리 경보 장치가 없는 확장용 CNT다. RiskEngine이 레이더와 Vision CIN을 HTTP polling하고 `events`와 경보 그룹에 HTTP로 기록한다. 레이더 업로더의 radar CIN 생성은 MQTT다. 두 ESP로 가는 SUB 알림은 HTTP다.
 
-MN의 IN 등록은 Mcc 관계이며 이벤트 이력은 별도 브리지가 HTTP로 복사한다. 기존 시연 대시보드는 MN을 직접 조회했고, 후속 시험에서는 IN에 등록한 관제 AE `Cdashboard`로 IN 경유 MN 조회를 확인했다. MEC IPE는 수동 등록된 서비스를 발견해 `fusedTracks`의 신선도를 조회하고 상태를 기록한다. RiskEngine은 이 IPE 상태를 입력으로 사용하지 않는다. 그림은 시연·시험 경로이며 최신 ACP 적용 뒤 두 ESP의 물리 동작까지 재확인한 것은 아니다.
+MN의 IN 등록과 IN의 MN 원격 조회는 Mcc 관계이며 이벤트 이력은 별도 브리지가 HTTP로 복사한다. 대시보드는 IN에 등록한 관제 AE `Cdashboard`로 IN 경유 MN 현재 상태와 IN 이력을 조회한다. MEC IPE는 수동 등록된 서비스를 발견해 `fusedTracks`의 신선도를 조회하고 상태를 기록한다. RiskEngine은 이 IPE 상태를 입력으로 사용하지 않는다. 그림은 시연·시험 경로이며 최신 ACP 적용 뒤 두 ESP의 물리 동작까지 재확인한 것은 아니다.
 
 ### oneM2M 서버로 tinyIoT를 선택한 이유
 
@@ -216,7 +228,7 @@ Pi 운영 RiskEngine은 별도 설치 snapshot에서 실행되며, `RADAR_LOCAL_
 
 ### 3.3 Vision과 IN-CSE
 
-시연 영상에서 VisionAI는 C270 입력을 처리해 레이더와 같은 사람을 confirmed로 연결했고, 쭈그린 자세 신호가 WARNING을 DANGER로 올렸다. 카메라 AI를 중지하는 경우와 레이더 입력이 만료되는 경우도 각각 시연했다. 노트북 대시보드는 MN 현재 상태와 브리지가 IN에 쌓은 이력을 표시한다. VisionAI는 시연 중 실행했으며 부팅 시 자동 시작 설정은 별도 확인 대상이다.
+시연 영상에서 VisionAI는 C270 입력을 처리해 레이더와 같은 사람을 confirmed로 연결했고, 쭈그린 자세 신호가 WARNING을 DANGER로 올렸다. 카메라 AI를 중지하는 경우와 레이더 입력이 만료되는 경우도 각각 시연했다. 노트북 대시보드는 IN을 통해 MN 현재 상태와 IN 이력을 조회한다. VisionAI는 시연 중 실행했으며 부팅 시 자동 시작 설정은 별도 확인 대상이다.
 
 ## 4. oneM2M 리소스 설계
 
