@@ -1,13 +1,15 @@
 # Sejong_4IoT_OneM2M
 
-**중장비 근접 위험 감지 프로토타입**
+**레이더와 VisionAI로 작업자 근접 위험을 판단하고 현장 경보와 관제를 연결하는 엣지 시스템**
 oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 > 최종 수정: 2026-11-20
 
-> **시연에서 확인한 동작 (2026-11-20):** Pi 레이더 업로더가 MQTT로 CIN을 만들고 RiskEngine이 HTTP polling으로 레이더와 Vision 입력을 판단해 경보 그룹에 기록한다. 영상에서 거리 단계, 카메라·레이더 동일 작업자 확인과 쭈그린 자세에 따른 WARNING→DANGER, VisionAI 중단, 레이더 중단 시 UNKNOWN→모형 포크 정지를 보여 준다. 그룹 기록은 세 경보 CNT에 fan-out됐고 작업자 ESP의 DANGER 모드를 확인했다. Pi MN-CSE는 노트북 IN-CSE에 등록되어 있으며 이력은 별도 HTTP/Mca 브리지가 옮기고 노트북 대시보드가 조회한다. Vision의 자동 부팅 등록과 장기 신뢰성은 확인하지 않았다. 11월 20일 점검 시 DHCP 예약은 구성되지 않았다. SG90은 모형 포크를 움직이며 실제 지게차 주행 모터를 제어하지 않는다. 자세한 [아키텍처](docs/architecture.md)와 [배포 기록](docs/deployment.md)를 참고한다.
+> **실장비 시연 (2026-11-20):** SafeZone은 Raspberry Pi에서 레이더와 카메라 데이터를 결합해 위험을 판단하고, oneM2M 경보를 작업자 태그와 지게차 모형에 전달한다. 영상에서 거리별 위험 단계, 동일 작업자의 레이더·카메라 확인, 자세에 따른 WARNING→DANGER 상향, VisionAI 중단, 레이더 중단 시 UNKNOWN과 모형 포크 정지를 보여 준다. 경보 그룹의 세 CNT fan-out과 작업자 ESP의 DANGER 모드도 확인했다. 판단 이력은 Pi MN-CSE에서 노트북 IN-CSE로 전달돼 대시보드에서 조회할 수 있다.
 
-> **촬영 후 Pi 확인:** RiskEngine Origin은 `Criskengine`이고 입력·기록은 HTTP polling/write다. 운영 그룹에 `macp`를 연결하고 세 alert CNT의 `Criskengine` 권한을 CREATE로 제한했다. events와 세 alert CNT의 기록은 성공했지만 이 ACP 재시험에서는 ESP 알림 수신이나 장치 출력을 확인하지 않았다. MEC IPE는 수동 등록한 Vision 서비스의 주소를 MEC011 등록부에서 발견해 최신 oneM2M 데이터를 조회했다. VisionAI를 잠시 실행했을 때 데이터 상태가 `INACTIVE → ACTIVE`로 바뀌었고 시험 뒤 다시 중지했다. 등록 상태 `ACTIVE`와 데이터 신선도 상태는 별개다.
+> **MEC011 실기기 확인:** Pi의 MEC 연동 AE가 수동 등록된 Vision 데이터 서비스를 발견하고 실제 `fusedTracks`를 조회했다. VisionAI를 재실행했을 때 데이터 상태가 `INACTIVE → ACTIVE`로 갱신됐다. 등록 상태와 데이터 신선도는 각각 확인한다.
+
+시연은 SG90으로 움직이는 **축소 모형 포크**를 사용했다. Vision 자동 시작, 장기 신뢰성과 실제 지게차 구동 제어는 검증 범위에 포함되지 않는다. 촬영 후 ACP 재시험에서는 세 alert CNT 기록까지 확인했으며 ESP 물리 동작은 다시 시험하지 않았다. 자세한 결과는 [아키텍처](docs/architecture.md)와 [배포 기록](docs/deployment.md)을 참고한다.
 
 ---
 
@@ -17,20 +19,20 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 지게차와 크레인은 차체 구조상 사각지대가 넓어, 후진이나 선회 중 작업자와 부딪히거나 끼이는 사고가 반복된다. 기존 후방카메라와 경광등은 운전자를 보조할 뿐 작업자에게 직접 경고하지 않고, 장비가 스스로 멈추지도 않는다. UWB·BLE 태그 방식은 작업자가 장비를 착용해야 해서, 미착용이나 배터리 방전 시 보호 공백이 생긴다.
 
-### 1.2 목표 — 아래 기능의 현장 동작을 모두 확인한 것은 아님
+### 1.2 SafeZone의 접근 방식
 
 | 목표 | 내용 |
 |---|---|
-| 무태그 감지 | 24GHz mmWave 레이더(HLK-LD2450)로 작업자를 착용 장비 없이 감지한다 |
-| 예측형 판단 | 거리와 상대운동 기반 위험 판단을 구현하고, 장비 감속·정지와 작업자 경보를 목표로 한다 |
-| 표준 상호운용성 | 모든 데이터를 oneM2M 표준 리소스로 관리해 관제·분석과 타사 장비 연동이 가능하게 한다 |
+| 무태그 감지 | 24GHz mmWave 레이더(HLK-LD2450)로 태그 착용 여부와 관계없이 주변 표적을 감지한다 |
+| 거리·접근 예측 | 거리와 상대운동으로 위험을 판단하고 작업자 경보와 모형 포크 정지를 연계한다 |
+| 표준 기반 연결 | oneM2M 리소스와 MEC 서비스 발견을 통해 현장 판단, 경보, 관제와 향후 서비스 확장 경로를 연결한다 |
 
 
 ---
 
 ## 2. 확인된 시스템 구성
 
-Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 정리했다. tinyIoT는 Pi의 **oneM2M MN-CSE**다. 운영 MEC IPE는 서비스 이름으로 Vision 데이터 서비스를 발견하고, 허용된 oneM2M CSE 안의 주소만 조회한다. 서비스 이름과 주소를 분리해 엣지 장비 확장을 위한 경로를 마련했으며, 현재는 한 서비스를 수동 등록해 확인했다. MEP의 앱 배치·관리가 확인되지 않아 MN-CSE, VisionAI, IPE·adapter를 MEC App으로 분류하지 않는다.
+Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 정리했다. tinyIoT **MN-CSE**가 센서 입력과 경보를 연결하고, RiskEngine이 현장에서 위험을 판단한다. MEC 연동 AE는 서비스 이름으로 Vision 데이터 서비스를 발견해 허용된 oneM2M CSE에서 데이터를 조회한다. Pi에서는 수동 등록한 서비스 한 개로 이 경로를 확인했다.
 
 ```mermaid
 flowchart LR
