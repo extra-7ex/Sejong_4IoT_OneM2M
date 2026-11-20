@@ -30,7 +30,7 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 ## 2. 확인된 시스템 구성
 
-Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 정리했다. tinyIoT는 Pi의 **oneM2M MN-CSE**다. 운영 MEC IPE는 MEC011 등록부에서 수동 등록한 Vision 데이터 서비스를 찾아 최신성을 확인하고 상태를 기록한다. MEP의 앱 배치·관리가 확인되지 않아 MN-CSE, VisionAI, IPE·adapter를 MEC App으로 분류하지 않는다.
+Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 정리했다. tinyIoT는 Pi의 **oneM2M MN-CSE**다. 운영 MEC IPE는 서비스 이름으로 Vision 데이터 서비스를 발견하고, 허용된 oneM2M CSE 안의 주소만 조회한다. 서비스 이름과 주소를 분리해 엣지 장비 확장을 위한 경로를 마련했으며, 현재는 한 서비스를 수동 등록해 확인했다. MEP의 앱 배치·관리가 확인되지 않아 MN-CSE, VisionAI, IPE·adapter를 MEC App으로 분류하지 않는다.
 
 ```mermaid
 flowchart LR

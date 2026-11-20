@@ -102,10 +102,11 @@
   <text x="337" y="745" class="nodeTitle">MEC IPE</text>
   <text x="337" y="772" class="nodeText">discovers service · reads Vision CIN</text>
   <text x="337" y="795" class="nodeText">writes status · cam_ok / freshness</text>
-  <rect x="315" y="840" width="250" height="90" class="boxPurple"/>
-  <text x="337" y="875" class="nodeTitle">MEC011 mock registry</text>
-  <text x="337" y="903" class="nodeText">manual Vision service entry</text>
-  <text x="337" y="923" class="nodeText">registry ACTIVE ≠ fresh data</text>
+  <rect x="315" y="830" width="250" height="118" class="boxPurple"/>
+  <text x="337" y="862" class="nodeTitle">MEC011 mock registry</text>
+  <text x="337" y="889" class="nodeText">manual Vision service entry</text>
+  <text x="337" y="916" class="nodeText">name lookup · CSE allow-list</text>
+  <text x="337" y="940" class="nodeText">registry ACTIVE ≠ fresh data</text>
   <rect x="640" y="710" width="230" height="105" class="boxBlue"/>
   <text x="662" y="745" class="nodeTitle">MN→IN bridge AE</text>
   <text x="662" y="772" class="nodeText">HTTP polling on MN</text>
@@ -120,7 +121,7 @@
 
   <path d="M565 760 H705 V420 H842 V390" class="edge"/>
   <text x="575" y="694" class="label">Mca · GET Vision state / POST health</text>
-  <path d="M440 815 V840" class="edgeBi"/>
+  <path d="M440 815 V830" class="edgeBi"/>
   <path d="M755 815 V850 H1275 V410 H880 V390" class="edgeBi"/>
   <text x="790" y="875" class="label">Mca · HTTP polling / summary write</text>
   <path d="M755 815 V830 H1450 V815" class="edge"/>

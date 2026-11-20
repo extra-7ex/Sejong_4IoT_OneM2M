@@ -28,11 +28,12 @@ SafeZone is a prototype for warehouse and manufacturing teams exploring ways to 
 
 An LD2450 radar connects to a Raspberry Pi over UART. A radar-collection IPE writes radar content instances (CINs) to the Pi’s tinyIoT MN-CSE over the oneM2M MQTT binding. A Logitech C270 connects to VisionAI over USB; VisionAI writes `fusedTracks` CINs to the same CSE over HTTP. The RiskEngine polls the latest radar and Vision data over HTTP, records decisions in `AE-riskengine/events`, and sends alert state to `grp-safezone-alarms/fopt`.
 
-Three design choices shape the response:
+Four design choices shape the response:
 
 1. **Radar provides the distance signal.** The current demo profile uses WARNING at 2.5 m and DANGER at 1.5 m.
 2. **Vision can raise risk, never lower it.** A posture cue can raise WARNING to DANGER; camera evidence does not clear a radar warning.
 3. **Radar loss fails safe on the model.** When radar data expires, the RiskEngine reports UNKNOWN and the scale-model fork moves to its stop position.
+4. **Vision is discovered by service name.** The MEC IPE resolves a Vision service through MEC011 and restricts its data address to an allowed oneM2M CSE. This separates the service name from its endpoint and gives a path to add edge nodes without hard-coding a device URL. The current Pi test uses one manually registered service; remote CSE operation has not been tested.
 
 ### Four cases in the demo
 
@@ -49,7 +50,9 @@ SafeZone keeps sensor data, events, alerts, and subscriptions in oneM2M resource
 
 During the recorded demo, a write to `/grp-safezone-alarms/fopt` appeared in all three alert containers: forklift, worker, and zone, and the worker ESP entered DANGER mode. In a later ACP retest, the three containers again showed `danger` records (`dist=1170`); that retest did not check ESP receipt or physical outputs. The zone alert container is a configured expansion point; this build has no physical zone beacon attached.
 
-The Pi MN-CSE is registered with the laptop’s Docker IN-CSE over Mcc. Event-history transfer is a separate bridge AE: it polls events from MN and creates summaries in IN using HTTP/Mca. The dashboard reads current state from MN and history from IN. The operational MEC IPE discovers a Vision data service manually registered in the Pi-local MEC011 registry; its service record points to the actual oneM2M `fusedTracks/la` CIN. The IPE reads the latest CIN and records its freshness. While VisionAI was off, the service registration was `ACTIVE` but the data status was `INACTIVE`; briefly running VisionAI changed the data status from `INACTIVE` to `ACTIVE`. VisionAI was stopped after the test. Automatic service registration and address updates across edge devices, remote CSE discovery, and selection among multiple services remain future work.
+The Pi MN-CSE is registered with the laptop’s Docker IN-CSE over Mcc. Event-history transfer is a separate bridge AE: it polls events from MN and creates summaries in IN using HTTP/Mca. The dashboard reads current state from MN and history from IN.
+
+The MEC IPE looks up a named service from the Pi-local MEC011 registry instead of relying on a fixed endpoint. `IPE_MEC_BASE` selects the registry, `IPE_MEC_SERVICE` names the service, and `IPE_DISCOVERY_CSE_BASE` limits which oneM2M CSE may serve the data (default: `IPE_MN_BASE`). Ambiguous service names and endpoints outside that CSE are not accepted. In this test, the team manually registered one Vision service pointing to the actual `fusedTracks/la` CIN. With VisionAI off, the registry entry was `ACTIVE` while data freshness was `INACTIVE`; briefly running VisionAI changed data freshness to `ACTIVE`. Registry status alone does not mean the data is fresh. Automatic service registration and address updates across edge devices, remote CSE discovery, and selection among multiple services remain future work.
 
 ### Hardware build
 

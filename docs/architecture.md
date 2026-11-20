@@ -44,7 +44,15 @@ SUB 경로는 두 형태다. Forklift SUB는 HTTP `/notify` 주소를 직접 보
 
 운영 MEC IPE에는 MEC011 발견 코드가 적용됐다. Pi loopback 등록부에 서비스 이름 `safezone-mock-vision`을 수동 등록했고, 그 주소는 실제 `fusedTracks` oneM2M CIN 경로를 가리킨다. VisionAI가 꺼져 있을 때 등록부의 서비스 상태는 `ACTIVE`였지만 데이터 신선도 상태는 `INACTIVE`였다. VisionAI를 잠시 실행하자 IPE가 발견한 주소에서 실제 최신 데이터를 읽고 데이터 상태를 `INACTIVE → ACTIVE`로 갱신했다. 시험 뒤 VisionAI는 다시 껐다. 등록 상태 `ACTIVE`만으로 실제 데이터가 신선하다고 판단할 수 없다.
 
-IPE 설정은 `IPE_MEC_BASE`로 조회할 MEC 등록부를, `IPE_MEC_SERVICE`로 찾을 서비스 이름을 정한다. `IPE_DISCOVERY_CSE_BASE`는 발견 주소가 속해야 하는 허용 CSE이며, 생략하면 `IPE_MN_BASE`를 쓴다. 같은 이름의 서비스가 여러 개면 임의로 고르지 않고, 허용 CSE 밖의 주소는 사용하지 않는다. 데이터가 stale이면 `INACTIVE`, 새 데이터가 확인되면 `ACTIVE`로 기록한다. 여러 엣지 장비의 서비스 자동 등록·주소 변경 반영과 여러 서비스 중 적절한 서비스를 고르는 기능은 구현·검증하지 않았다.
+#### 확장점: 서비스 이름과 oneM2M 주소 분리
+
+| 설정 | 역할 | 현재 Pi 구성 |
+|---|---|---|
+| `IPE_MEC_BASE` | 조회할 MEC011 등록부 선택 | Pi loopback의 mock registry |
+| `IPE_MEC_SERVICE` | 발견할 Vision 서비스 이름 | 수동 등록한 `safezone-mock-vision` |
+| `IPE_DISCOVERY_CSE_BASE` | 발견 주소가 속할 수 있는 허용 CSE | 생략 시 `IPE_MN_BASE` 사용 |
+
+IPE가 서비스 이름으로 주소를 찾으므로 Vision CIN endpoint를 엔진 코드에 고정할 필요가 없다. 같은 서비스 이름의 결과가 여러 개면 임의로 고르지 않고, 발견된 주소가 허용 CSE 밖이면 사용하지 않는다. 이 경계는 다른 CSE에 서비스를 두는 확장 경로를 제공하지만, 원격 CSE 배치는 장비에서 시험하지 않았다. 데이터가 stale이면 `INACTIVE`, 새 데이터가 확인되면 `ACTIVE`로 기록한다. 서비스 자동 등록·주소 갱신과 여러 서비스 중 적절한 endpoint를 자동 선택하는 기능은 구현·검증하지 않았다.
 
 해당 코드의 별도 로컬 브랜치는 `codex/mec011-live-discovery`이며 17개 단위 시험 통과 보고가 있다. 이 코드가 운영 Pi IPE에 적용됐지만 브랜치는 GitHub에 push되지 않아 저장소 소스와 배포본의 동기화가 남아 있다. 원격 CSE를 통한 조회와 장시간 안정성은 실제 장비에서 시험하지 않았다. MEC 등록부는 Pi loopback에서만 접근 가능하다. 여러 엣지 장비의 서비스 자동 등록·주소 갱신과 적절한 서비스 선택은 다음 확장 단계다.
 
