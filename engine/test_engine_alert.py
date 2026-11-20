@@ -41,7 +41,7 @@ class EngineAlertTest(unittest.TestCase):
         self.http.vision = {"cam_ok": True, "radar_ok": True, "tracks": []}
         self.app = RiskApplication(self.http, RiskEngine(RiskConfig(release_hold_s=0), clock=lambda: self.now[0]),
                                    alert_writer=HTTPAlertWriter(self.http, "/AE-forklift01/alert"),
-                                   vision_path="/AE-VisionAI/fusedTracks/la")
+                                   vision_path="/AE-VisionAI/fusedTracks/la", wall_clock=lambda: 1)
 
     def step(self, ri, x_mm, y_mm):
         self.now[0] += 0.5

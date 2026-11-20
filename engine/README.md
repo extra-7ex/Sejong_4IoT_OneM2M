@@ -1,7 +1,41 @@
-# SafeZone 위험판단 엔진 MVP
-## MQTT 알림 입출력 — Pi 격리 시험 확인
+# 2026-11-20 Pi 운용 기록
 
-### Vision 조언과 작업자 alert 시험
+실제 Pi는 별도 엔진 실행 경로에서 HTTP polling과 HTTP 출력을 사용한다. Origin, 시연용 5초 설정, 거리 기준 및 ACP 확인 결과는 [Pi 운영 상태](../docs/pi-operating-state.md)를 참고한다. 아래 과거 시험 설명과 현재 Pi 구성을 구분한다.
+
+# SafeZone 위험판단 엔진 MVP
+
+## Pi 시연 배포 프로필 (2026-11-20)
+
+시연에서 실행한 엔진은 저장소 checkout이 아니라 `/opt/safezone/engine-freshness-20261119`의 별도 설치본이다. 입력은 radar와 설정된 Vision CIN을 HTTP polling으로 읽고, 판단 결과를 `events`와 `grp-safezone-alarms/fopt`에 HTTP로 기록한다. MQTT는 radar 업로더의 CIN 생성 바인딩이며, 현재 RiskEngine의 입력 전송 방식이 아니다.
+
+Pi 시연 설정은 warning 2.5 m, danger 1.5 m, stale 제한 5초, 최대 표적 샘플 간격 5초다. 이는 시연 중 적용한 값이다. 팀 기획 기준인 warning 3.0 m / danger 1.5 m와 구분하며, 어느 값도 인증된 안전 한계나 추적 정확도 보증이 아니다. 저장소 설정 기본값은 별도 아래 설정표에 표시한다.
+
+## 촬영 후 Pi ACP 및 RiskEngine 확인 (2026-11-20)
+
+현재 Pi 서비스 Origin은 `Criskengine`이고, 운영 엔진의 입력과 출력은 HTTP polling/write다. radar·`fusedTracks`·`events` 조회 권한이 동작했으며 MQTT SUB는 만들거나 변경하지 않았다. 이 HTTP 경로를 저장소의 별도 MQTT notification 시험과 혼동하지 않는다.
+
+운영 경보 group에는 처음 `macp`가 없었고 `cnm=2`인데 `mid`는 세 alert CNT를 가리키고 있었다. 무구독 시험 group에서 권한을 확인한 다음, 운영 group의 기존 세 `mid`를 유지·갱신하고 전용 group ACP를 `macp`로 연결해 `cnm=3`으로 맞췄다. oneM2M fan-out 쓰기는 group `macp`와 구성원 CNT의 ACP 권한을 모두 사용하며, `cnm`은 group member 수다 ([ETSI TS 118 101 v3.22.0](https://www.etsi.org/deliver/etsi_ts/118100_118199/118101/03.22.00_60/ts_118101v032200p.pdf)). group ACP와 세 alert CNT ACP에서 `Criskengine`에는 CREATE만 허용했다. 소유자 권한 및 worker CNT의 기존 `CAdmin` 권한은 유지했다.
+
+엔진 재시작 후 events CIN 생성은 HTTP 201 / RSC 2001로 성공했다. 세 alert CNT의 최신 CIN은 모두 `level=danger`, `dist=1170`이었다. 이는 저장 권한과 fan-out 기록을 확인한 것이며 ESP notification 수신이나 부저·서보 출력을 확인한 결과가 아니다. VisionAI는 과열 때문에 중지돼 있었고, 엔진은 저장된 `fusedTracks`를 stale로 처리했다. 이 시점은 녹화 영상에서 확인한 VisionAI same-person/posture 결과와 구분한다. 새 MQTT SUB는 만들거나 변경하지 않았다.
+
+운영 MEC IPE는 Pi loopback MEC011 등록부에서 수동 등록한 `safezone-mock-vision`을 발견하고, 등록된 주소의 실제 `fusedTracks` oneM2M 데이터를 확인한다. Vision이 꺼져 있을 때 등록 상태는 `ACTIVE`였지만 데이터 freshness는 `INACTIVE`였고, VisionAI를 잠시 실행하자 실제 CIN을 읽어 데이터 상태가 `INACTIVE → ACTIVE`로 바뀌었다. VisionAI는 시험 뒤 다시 중지했다. 등록 상태만으로 데이터 신선도를 보장하지 않는다.
+
+Discovery 설정은 `IPE_MEC_BASE`(등록부 주소), `IPE_MEC_SERVICE`(찾을 서비스 이름), `IPE_DISCOVERY_CSE_BASE`(발견 주소를 허용할 CSE)로 나뉜다. 마지막 값이 없으면 `IPE_MN_BASE`를 쓴다. 중복 서비스 이름은 임의 선택하지 않고 허용 CSE 밖 주소는 사용하지 않는다. stale 데이터는 `INACTIVE`, 새 데이터는 `ACTIVE`로 기록한다. 기능 코드는 운영 Pi IPE에 적용됐지만 `codex/mec011-live-discovery` 브랜치는 GitHub에 push되지 않아 저장소 소스와 배포본의 동기화가 남아 있다. 별도 브랜치에서 17개 단위 시험 통과가 보고됐다. 서비스 자동 등록·주소 갱신, 다중 서비스 자동 선택과 원격 CSE 경유는 검증하지 않았다.
+
+## 레이더 입력 시각 검사
+
+모든 레이더 CIN은 `con.ts`에 Unix 초를 포함해야 한다. 레이더 업로더와 엔진의
+시계가 동기화돼 있어야 한다. 프레임이 `RISK_RADAR_MAX_AGE_S`(기본 3초)보다
+오래됐거나 `RISK_RADAR_FUTURE_SKEW_S`(기본 1초)를 넘겨 미래에 있으면 해당
+프레임을 처리하지 않고 `UNKNOWN`으로 기록한다. 유효한 빈 `targets: []`는
+정상 프레임이다. 시계가 틀리거나 3초 이상 지연되면 정상 센서도 UNKNOWN이
+될 수 있으므로 실제 네트워크 지연을 측정해 한계를 설정한다.
+
+녹화 시연에서는 radar 입력 만료 후 UNKNOWN과 SG90 모형 포크 정지를 확인했다.
+이는 엔진·CSE 또는 Wi-Fi 자체가 끊겼을 때의 독립 인터락이나 재접속 복구를
+뜻하지 않는다.
+
+## Vision 조언 동작
 
 `--vision-path /AE-VisionAI/fusedTracks/la`를 지정하면 레이더 판정이 `SAFE`·`WARNING`·`DANGER`일 때마다 MN-CSE에 HTTP GET을 보내 최신 Vision CIN을 확인한다(`UNKNOWN`일 때는 조회하지 않고 그대로 둔다). 주기 타이머 폴링이 아니라 레이더 입력에 따른 조회다. Vision 입력이 없거나 오래됐거나 `cam_ok=false`이거나 유효하지 않으면 레이더 판정을 유지한다. 시계가 동기화됐다는 가정이 필요하다. 모든 Vision 조언은 Vision 결과의 `cam_ok`와 `radar_ok`가 모두 `true`일 때만 쓴다. `radar_ok`가 없거나 `true`가 아니면 조언을 적용하지 않고 `vision_radar_unavailable`을 기록한다(VisionAI가 레이더 입력 없이 카메라만으로 만든 결과를 믿지 않기 위해서다).
 
@@ -10,6 +44,8 @@
 | 카메라 단독 올리기 | 레이더 `SAFE`, Vision `ts` 3초 이내, `camera_only` + `raise` | `WARNING` |
 | 자세 올리기 | 레이더 `WARNING` 표적, 같은 슬롯(`radar_id`)이고 거리 차 0.5m 이내인 `confirmed` + `raise`, 자세 `crouching`·`lying`, Vision 3초 이내 | 그 표적 `DANGER` |
 | 유령 낮추기 (**기본 꺼짐**, `VISION_GHOST_LOWER_ENABLED=true`로 켬) | 레이더 `DANGER` 표적, 같은 슬롯이고 거리 차 0.5m 이내인 `ghost_suspect` + `lower_to_caution`, 표적 거리 1m 초과, Vision **1초** 이내 | 그 표적 `WARNING` (`SAFE`로는 내리지 않음) |
+
+녹화 Pi 시연에서는 유령 낮추기를 켜지 않았다. 시연 설계상 Vision은 위험을 올릴 수만 있고, 기존 radar 위험도를 낮추지 않는다.
 
 표적마다 조정한 뒤 가장 높은 단계를 최종 판정으로 쓴다. 다른 표적이 진짜 `DANGER`면 유령을 낮춰도 `DANGER`다. 직전 표적을 잃어 이전 위험을 유지 중인 표적(`held_previous_risk`)과 연결이 불확실한 표적은 조정하지 않는다. 조정 내용은 판정의 `vision_adjustments`, 레이더만의 판정은 `radar_status`에 남는다.
 
@@ -25,11 +61,13 @@
 | `RISK_RELEASE_HOLD_S` | 3.0 | `SAFE` 해제 지연 (0이면 끔) |
 | `VISION_GHOST_LOWER_ENABLED` | false | 유령 낮추기 사용. 실제 사람을 놓칠 위험을 실장비에서 확인하기 전에는 끈다 |
 
-위 규칙은 단위 시험(`engine/test_vision_advice.py`)으로만 확인했다. 실제 VisionAI fusedTracks와 실제 LD2450으로는 아직 시험하지 않았다.
+저장소의 Vision 조언 규칙은 단위 시험으로 점검하고, 2026-11-20 녹화 시연에서는 실제 카메라·레이더의 same-person confirmed와 쭈그린 자세에 따른 WARNING→DANGER를 확인했다. 운영 실행 설정은 위 Pi 시연 프로필을 기준으로 한다.
 
 `--mqtt-events`와 `--mqtt-alert-path /AE-worker01/alert-test`를 함께 지정하면 미리 만든 단일 시험 작업자 CNT에 상태 변경 시 `level`, `dist`(mm), `ttc`(null)를 기록한다. alert 발행은 기본적으로 꺼져 있다. events와 alert는 각자 응답과 불확실 상태를 추적한다. 같은 상태의 결과가 불확실하면 자동 재전송하지 않는다.
 
-핵심 확인사항: 시험용 작업자 한 명의 경로를 명시한다. 이 시험은 그 한 작업자에게 전체 위험 상태를 전달하는 임시 전제를 쓴다. 레이더 표적과 작업자 ESP의 매핑은 미정이므로 실제 작업자에게 경보를 보내는 구성으로 간주하지 않는다. 현재 worker_node는 `unknown`을 무음으로 처리한다. 실제 수신과 부저를 검증할 때까지 기존 `LOCAL_DECISION`을 유지하고 운영 CNT의 작성자는 한 번에 하나로 둔다. 단말이 구독하는 경로와 시험 CNT는 일치해야 한다. 시험 ACP는 Pi에서 확인했지만 운영 ACP, 재접속 시 상태 동기화와 실제 장비 연동은 미검증이다.
+### MQTT isolated-test caveats (2026-11-17)
+
+이전 MQTT transport 시험은 시험용 단일 worker CNT를 대상으로 했다. 아래 기록은 현재 HTTP polling 시연 경로와 구분한다. 운영 writer는 RiskEngine 하나로 유지하고, SUB가 연결된 리소스와 writer가 기록하는 경로를 대조한다. worker ESP의 실제 DANGER 수신은 2026-11-20 시연에서 별도로 확인했다.
 
 ### Pi ARM64 통합 시험 결과 (2026-11-17)
 
@@ -56,18 +94,16 @@ python -m engine.main --transport mqtt-notification --mqtt-topic '<알림 토픽
 
 
 
-## 먼저 확인할 항목 — 실제 연결 전에 우선 처리
+## 이전 MVP에서 남긴 점검 항목
 
 > [!IMPORTANT]
-> 아래 항목은 현재 코드가 실제 레이더·tinyIoT에 연결되어 검증되지 않아 남아 있는 전제다. 특히 **P0 두 항목을 확인하기 전에는 정상 복귀 동작이나 실제 장치 제어가 검증됐다고 보면 안 된다.**
+> Pi 시연에서 확인된 경로는 위 배포 프로필을 기준으로 본다. 아래에는 시연 범위 밖의 지속 운용·추적 검증만 남겼다.
 
-- [ ] **P0 · 레이더 CIN 실제 예시 확보:** 실행 중 tinyIoT의 `AE-forklift01/radar/la` 응답 한 건을 저장해 `ri`, `con`, `targets`, `x/y` 단위가 코드의 가정과 맞는지 확인한다. 현재 입력 경로와 필드 형식은 저장소 README 예시를 바탕으로 한 가정이다.
-- [ ] **P0 · 레이더가 빈 프레임도 계속 보내는지 확인:** 이 엔진은 새 CIN이 오지 않으면 stale `UNKNOWN`으로 바뀐다. 코드에 빈 프레임 전송이 추가됐지만 실제 장비에서 확인되지 않았다. 사람이 화면에서 나가도 새 빈 프레임이 오지 않는다면 엔진은 `SAFE`로 복귀하지 않는다. `targets: []`를 포함한 주기적 heartbeat를 실제로 받을 수 있는지 확인하고, 아니면 레이더 업로더를 보완한다.
-- [ ] **P1 · tinyIoT 입출력 확인:** RPi에서 `la` GET이 성공하는지와 `AE-riskengine/events` POST 후 CIN이 실제 생성되는지 응답 및 리소스 조회로 확인한다. HTTP 요청 성공 로그만으로 등록 검증을 끝내지 않는다.
-- [ ] **P1 · 제어 경로 확인:** 현재 MVP는 `events`에 판정 기록만 쓰며 모터·LED·부저 명령을 보내지 않는다. 장치 제어에는 alert CIN 작성 규칙과 SUB/notification 설정, `UNKNOWN` 때의 fail-safe 동작 확인이 추가로 필요하다.
-- [ ] **P2 · 좌표·표적 추적 조건 확인:** 표적 슬롯이 사람을 연속해서 가리키는지, 지게차 선회 시 레이더 좌표 회전을 어떻게 보정할지, 레이더 설치 오프셋과 차체 외곽을 어떻게 반영할지 확인한다.
+- [x] **Pi 시연 입력·기록 경로:** radar latest CIN HTTP GET, events와 alert group HTTP write, 세 alert CNT fan-out 및 worker DANGER mode 확인.
+- [x] **UNKNOWN response in demo:** radar input expiry leads to UNKNOWN and the scale-model fork stop position.
+- [ ] **지속 추적·복귀 조건:** 빈 프레임 수신 주기와 다중 표적 전환에서 SAFE 복귀가 안정적인지, 실제 장착 오프셋과 지게차 회전을 반영하는지는 별도 검증한다.
 
-## 이 프로그램이 하는 일
+## 저장소 엔진이 하는 일
 
 라즈베리파이에서 실행하는 Python 위험판단 AE다. 레이더 CIN에서 표적의 2D 좌표를 읽고, 현재 거리와 연속 좌표로 추정한 상대 움직임을 이용해 `SAFE`, `WARNING`, `DANGER`, `UNKNOWN`을 판정한다. 판정 상태가 바뀌면 `AE-riskengine/events`에 oneM2M CIN으로 기록한다.
 
@@ -79,11 +115,11 @@ tinyIoT의 레이더 CIN
 AE-riskengine/events에 이벤트 CIN 등록
 ```
 
-**이 MVP는 장비를 정지·감속시키거나 경보기를 울리지 않는다.** 레이더에서 실제 CIN을 받아오는 경로와 CSE에 이벤트를 등록하는 경로도 아직 실행 중 서버에서 검증되지 않았다.
+저장소 엔진은 판정을 events로 기록하며 경보 그룹 writer 설정도 제공한다. Pi 시연에서는 별도 설치본이 경보 그룹에 기록했고, worker ESP의 DANGER 모드를 확인했다. 이 동작은 모형 포크를 통해 보여 주며 실제 차량 주행 모터 제어가 아니다.
 
 ## 판정 의미와 상태 규칙
 
-- 현재 거리 기준은 warning `1.0 m`, danger `0.5 m`다(11/19, 지게차 노드 `radar_node.py`의 `WARN_MM`·`DANGER_MM`과 통일). 예측 최근접 반경도 `0.5 m`다. 이 값은 시연용 초기 가설이며 산업안전 기준이 아니다.
+- 계획 단계에서 정한 현재 거리 기준은 warning `3.0 m`, danger `1.5 m`다. 녹화 시연 프로필은 warning `2.5 m`, danger `1.5 m`였다. 저장소 코드 기본값 `1.0 m` / `0.5 m`는 환경 설정이 없을 때 쓰이는 값으로, 기획 기준과 시연 설정 모두와 구분한다. 어떤 값도 산업안전 기준이나 검증된 제동 거리로 해석하지 않는다.
 - `t_cpa_s`는 일정한 상대속도가 유지된다고 가정했을 때 **최근접 위치에 도달하는 시각**이다. 위험 반경에 **처음 진입하는 시각**이 아니다.
 - `d_cpa_m`는 `t_cpa_s` 시점의 예측 최소 거리다. MVP는 `d_cpa_m`가 임시 CPA 반경 `1.0 m` 안이고 최근접 시각이 warning `3.0 s` / danger `1.5 s` 이내일 때 CPA 경고를 낸다. 위험 반경 최초 진입 시각은 계산하지 않는다.
 - 위험도 우선순위는 `DANGER > WARNING > UNKNOWN > SAFE`다. 직접 거리 위험은 속도 추정이 안 되어도 판정한다.
@@ -100,13 +136,13 @@ AE-riskengine/events에 이벤트 CIN 등록
 | 레이더 최신 CIN은 `AE-forklift01/radar/la`에서 GET 가능 | 기본 경로에서 polling | `ONEM2M_RADAR_PATH` |
 | oneM2M CIN에는 `ri`가 있음 | polling 중복 제거 및 notification 중복 전달 방지에 사용. 없으면 입력 오류 처리 | `RiskApplication.accept_message()` |
 | CIN `con`은 객체 또는 JSON 문자열이고 `targets` 배열을 포함 | 두 형식을 모두 허용. 표적의 `x`,`y`는 mm, `v`는 선택적인 cm/s 원시값 | `normalize_radar_cin()` |
-| 센서 `ts`는 Unix 초 | `sensor_ts_unix_s`에 보존만 하고 속도·신선도 계산에는 쓰지 않음 | `normalize_radar_cin()` |
+| 센서 `ts`는 Unix 초 | 엔진 입력 단계에서 현재 시각과 비교해 오래되거나 미래인 프레임을 UNKNOWN으로 처리한다. 속도 계산은 monotonic 수신 시각을 쓴다. | `RiskApplication.accept_message()` |
 | Pi 수신 시각은 처리 서버의 시계 | 속도 추정·stale·표적 소실 시간에 monotonic 수신 시각을 사용. 별도로 서버 수신 Unix 시각/UTC도 기록 | `RiskEngine.process_frame()` |
 | 같은 표적을 연속 프레임에서 슬롯/배열 위치로 연결 가능 | `slot`, 없으면 `id`, 그것도 없으면 배열 순번을 임시 키로 사용. 영구적인 사람 ID로 보지 않음 | `normalize_radar_cin()`, 표적 jump gate |
 | LD2450의 `v`만으로 2D 이동 방향을 알 수 없음 | `v`는 기록용. `vx`,`vy`는 같은 키의 연속 `x`,`y`와 서버 monotonic `dt`로 계산 | `RiskEngine._evaluate_target()` |
 | MVP 중 레이더와 지게차의 방향은 일정 | 레이더 좌표계에서 상대속도를 계산. 선회하면 좌표 회전이 속도 추정에 섞임 | 후속 yaw 보정 필요 |
 | 레이더 원점으로부터 잰 거리를 근사값으로 사용 | 레이더 설치 오프셋과 지게차 물리 외곽은 아직 반영하지 않음 | CPA 반경 및 좌표 보정 후속 작업 |
-| 테스트 임계값을 환경에 맞춰 조정할 수 있음 | 현재 기본값은 모두 가설값. 이벤트에도 적용 파라미터를 기록 | `config.py` / 아래 환경 변수 |
+| 거리 임계값은 배치에 맞게 정해야 함 | 계획 3.0/1.5 m, 시연 2.5/1.5 m, 코드 기본 1.0/0.5 m로 각각 구분 | `config.py` / 아래 환경 변수 |
 | 이벤트 기록이 우선 | 상태 변경 때만 `AE-riskengine/events`에 CIN 등록. alert CIN이나 장치 제어는 하지 않음 | `ONEM2M_EVENTS_PATH`, 후속 제어 연동 |
 
 ## polling에서 SUB notification으로 바꾸기
@@ -136,12 +172,14 @@ python -m engine.main --transport notification --listen 0.0.0.0 --port 8081
 | `ONEM2M_EVENTS_PATH` | `/AE-riskengine/events` | 이벤트 CNT 경로 |
 | `ONEM2M_ORIGIN` / `ONEM2M_RVI` | `Criskengine` / `3` | oneM2M Origin / Release Version |
 | `ONEM2M_POLL_INTERVAL_S` / `ONEM2M_HTTP_TIMEOUT_S` | `0.1` / `1.0` | polling 주기 / HTTP timeout |
-| `RISK_WARNING_DISTANCE_M` / `RISK_DANGER_DISTANCE_M` | `1.0` / `0.5` | 가설적 현재 거리 기준 |
+| `RISK_WARNING_DISTANCE_M` / `RISK_DANGER_DISTANCE_M` | `1.0` / `0.5` | 저장소 코드 기본값. 기획 기준 3.0/1.5 m 및 시연 프로필 2.5/1.5 m와 구분 |
 | `RISK_WARNING_TTC_S` / `RISK_DANGER_TTC_S` | `3.0` / `1.5` | 가설적 최근접 시각 기준 (`t_cpa_s`) |
 | `RISK_CPA_RADIUS_M` / `RISK_CPA_HORIZON_S` | `0.5` / `3.0` | 가설적 최근접 거리 / 예측 범위 |
 | `RISK_MIN_SPEED_MPS` | `0.05` | 이보다 느리면 CPA 무효 |
-| `RISK_MAX_SAMPLE_INTERVAL_S` | `0.75` | 이보다 긴 수신 간격이면 속도·CPA 무효 |
-| `RISK_STALE_AFTER_S` | `1.0` | 새 CIN 부재 시 UNKNOWN 전환 시간 |
+| `RISK_MAX_SAMPLE_INTERVAL_S` | `0.75` | 저장소 코드 기본값. Pi 시연 override는 5초 |
+| `RISK_STALE_AFTER_S` | `1.0` | 저장소 코드 기본값. Pi 시연 override는 5초 |
+| `RISK_RADAR_MAX_AGE_S` | `3.0` | 센서 시각이 이 시간보다 오래되면 UNKNOWN |
+| `RISK_RADAR_FUTURE_SKEW_S` | `1.0` | 센서 시각이 현재보다 이 시간 넘게 앞서면 UNKNOWN |
 | `RISK_TARGET_LOSS_GRACE_S` | `1.0` | 표적 소실 유예 시간 |
 | `RISK_MAX_TARGET_JUMP_M` | `2.5` | 같은 표적의 비현실적 위치 점프 제한 |
 

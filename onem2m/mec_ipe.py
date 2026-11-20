@@ -7,6 +7,7 @@
 확인 방법 (IPE_PROBE)
     cin:<경로>   그 서비스가 MN-CSE에 쓰는 최신 CIN이 신선한지 본다 (기본: VisionAI fusedTracks).
                  ts가 IPE_MAX_AGE_S 안이고 cam_ok가 false가 아니면 성공.
+    mec-cin      MEC011에서 IPE_MEC_SERVICE를 발견하고, 등록된 MN-CSE CIN URI를 조회한다.
     http(s)://…  그 주소에 GET을 보내 2xx면 성공.
 
 판정
@@ -65,6 +66,7 @@ def load_config() -> dict[str, Any]:
         "status_mni": int(env("IPE_STATUS_MNI", "100")),
         "mec_base": env("IPE_MEC_BASE", "").rstrip("/"),   # 예: http://127.0.0.1:18080/safezone-a/mep-a/mec_service_mgmt/v1
         "mec_service": env("IPE_MEC_SERVICE", ""),          # 레지스트리의 serName (비우면 service와 같음)
+        "discovery_cse_base": env("IPE_DISCOVERY_CSE_BASE", "").rstrip("/"),
         "mec_update": env("IPE_MEC_UPDATE", "0") == "1",
         "rvi": env("IPE_RVI", "3"),
         "timeout_s": float(env("IPE_TIMEOUT_S", "5")),
@@ -146,9 +148,46 @@ class MecRegistry:
     def entry(self) -> Optional[dict]:
         query = urllib.parse.urlencode({"ser_name": self.ser_name})
         entries = self.http(f"{self.base}/services?{query}", timeout_s=self.timeout_s)
-        if not isinstance(entries, list) or len(entries) != 1:
+        if not isinstance(entries, list):
             return None
-        return entries[0]
+        matches = [entry for entry in entries if isinstance(entry, dict) and entry.get("serName") == self.ser_name]
+        if len(matches) > 1:
+            raise ValueError(f"multiple MEC services named {self.ser_name}")
+        return matches[0] if matches else None
+
+    @staticmethod
+    def one_m2m_cin_path(entry: dict, mn_base: str) -> str:
+        """Return a discovered /la path only when it stays on this configured MN-CSE."""
+        if entry.get("state") != ACTIVE:
+            raise ValueError("MEC service is not ACTIVE")
+        transport = entry.get("transportInfo")
+        endpoint_info = transport.get("endpoint") if isinstance(transport, dict) else None
+        endpoint = endpoint_info.get("uris") if isinstance(endpoint_info, dict) else None
+        if not isinstance(endpoint, list):
+            raise ValueError("MEC service has no endpoint URI list")
+
+        base = urllib.parse.urlsplit(mn_base)
+        if not base.scheme or not base.netloc or not base.path:
+            raise ValueError("IPE_MN_BASE must be an absolute CSE URI")
+        base_path = base.path.rstrip("/")
+        candidates: list[str] = []
+        for value in endpoint:
+            if not isinstance(value, str):
+                continue
+            uri = urllib.parse.urlsplit(value)
+            if (uri.scheme.lower(), uri.netloc.lower()) != (base.scheme.lower(), base.netloc.lower()):
+                continue
+            if uri.query or uri.fragment or uri.username or uri.password:
+                continue
+            decoded_path = urllib.parse.unquote(uri.path)
+            if any(part in (".", "..") for part in decoded_path.split("/")):
+                continue
+            if not decoded_path.startswith(base_path + "/") or not decoded_path.endswith("/la"):
+                continue
+            candidates.append(decoded_path[len(base_path):])
+        if len(candidates) != 1:
+            raise ValueError("MEC service must advertise exactly one latest CIN URI on the configured MN-CSE")
+        return candidates[0]
 
     def set_state(self, entry: dict, state: str) -> None:
         url = entry["_links"]["self"]["href"]
@@ -162,6 +201,10 @@ class Ipe:
                  registry: Optional[MecRegistry] = None, clock: Callable[[], float] = time.time):
         self.cfg = cfg
         self.reader = reader or Cse(cfg["mn_base"], cfg["read_origin"], cfg["rvi"], cfg["timeout_s"])
+        discovery_base = cfg.get("discovery_cse_base") or cfg["mn_base"]
+        self.discovery_base = discovery_base
+        self.discovery_reader = (self.reader if discovery_base == cfg["mn_base"] else
+                                 Cse(discovery_base, cfg["read_origin"], cfg["rvi"], cfg["timeout_s"]))
         self.writer = writer or Cse(cfg["mn_base"], cfg["origin"], cfg["rvi"], cfg["timeout_s"])
         if registry is None and cfg["mec_base"]:
             registry = MecRegistry(cfg["mec_base"], cfg["mec_service"] or cfg["service"], cfg["timeout_s"])
@@ -204,6 +247,21 @@ class Ipe:
                 return check_cin(self.reader, target[4:], self.cfg["max_age_s"], now)
             except (RuntimeError, *NET_ERRORS) as exc:
                 return None, f"mn_error {str(exc)[:80]}"
+        if target == "mec-cin":
+            if self.registry is None:
+                return None, "mec_unconfigured"
+            try:
+                entry = self.registry.entry()
+                if entry is None:
+                    return False, "service_not_registered"
+                if entry.get("state") != ACTIVE:
+                    return False, "mec_service_inactive"
+                path = self.registry.one_m2m_cin_path(entry, self.discovery_base)
+                return check_cin(self.discovery_reader, path, self.cfg["max_age_s"], now)
+            except (RuntimeError, urllib.error.URLError, OSError) as exc:
+                return None, f"mec_error {str(exc)[:80]}"
+            except (KeyError, TypeError, ValueError) as exc:
+                return False, f"invalid_mec_service {type(exc).__name__}"
         return check_http(target, self.cfg["timeout_s"])
 
     def registry_state(self) -> Optional[str]:
@@ -226,7 +284,8 @@ class Ipe:
     def status_con(self, now: float, registry_state: Optional[str]) -> dict:
         con = {"service": self.cfg["service"], "state": self.live.state, "reason": self.live.reason[:60],
                "fails": self.live.fails, "since": round(self.live.since or now, 2), "ts": round(now, 2),
-               "probe": "cin" if self.cfg["probe"].startswith("cin:") else "http"}
+               "probe": ("mec-cin" if self.cfg["probe"] == "mec-cin" else
+                         "cin" if self.cfg["probe"].startswith("cin:") else "http")}
         if registry_state is not None:
             con["registry_state"] = registry_state
         return con

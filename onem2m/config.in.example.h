@@ -2,8 +2,8 @@
 // 수정 후 반드시 `make clean && make`.
 // 배치는 둘 중 하나를 고른다.
 
-// 배치 A: Pi 내부 IN (권장, 시연용). 공유기·노트북과 무관하게 MN과 함께 뜬다.
-//   MN과 같은 Pi에서 별도 복사본(예: ~/tinyIoT-in)을 포트 3001로 실행한다.
+// 이 파일은 별도 tinyIoT IN 시험용 설정이다. 현재 시연의 IN은 노트북 Docker 컨테이너다.
+// 대안 배치 A: Pi 내부 IN. MN과 같은 Pi에서 별도 복사본(예: ~/tinyIoT-in)을 포트 3001로 실행한다.
 #define SERVER_TYPE   IN_CSE
 #define SERVER_IP     "127.0.0.1"
 #define SERVER_PORT   "3001"                 // MN(3000)과 겹치지 않게
@@ -13,7 +13,7 @@
 // MQTT는 끈 상태로 둔다: // #define ENABLE_MQTT
 //   (MN과 같은 브로커에 같은 ClientID "TinyIoT"로 붙으면 서로 연결을 끊음)
 
-// 배치 B: 노트북 WSL IN
+// 대안 배치 B: 노트북 WSL IN
 // #define SERVER_IP   "0.0.0.0"
 // #define SERVER_PORT "3000"
 //   MN의 REMOTE_CSE_HOST = "<NOTEBOOK_IP>", REMOTE_CSE_PORT = 3000

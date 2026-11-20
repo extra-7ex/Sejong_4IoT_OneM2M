@@ -175,7 +175,7 @@ class ApplicationFusionTests(unittest.TestCase):
         self.now = [10.0]
         self.cse = FakeVisionCSE()
         self.app = RiskApplication(self.cse, RiskEngine(RiskConfig(), clock=lambda: self.now[0]),
-                                   vision_path="/AE-VisionAI/fusedTracks/la")
+                                   vision_path="/AE-VisionAI/fusedTracks/la", wall_clock=lambda: 1)
 
     def frame(self, ri, targets):
         return {"m2m:cin": {"ri": ri, "con": json.dumps({"ts": 1, "targets": targets})}}

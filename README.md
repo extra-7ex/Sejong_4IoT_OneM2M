@@ -1,9 +1,13 @@
 # Sejong_4IoT_OneM2M
 
-**중장비 근접 위험 감지 및 자동 정지 시스템**
+**중장비 근접 위험 감지 프로토타입**
 oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
-> 최종 수정: 2026-10-28
+> 최종 수정: 2026-11-20
+
+> **시연에서 확인한 동작 (2026-11-20):** Pi 레이더 업로더가 MQTT로 CIN을 만들고 RiskEngine이 HTTP polling으로 레이더와 Vision 입력을 판단해 경보 그룹에 기록한다. 영상에서 거리 단계, 카메라·레이더 동일 작업자 확인과 쭈그린 자세에 따른 WARNING→DANGER, VisionAI 중단, 레이더 중단 시 UNKNOWN→모형 포크 정지를 보여 준다. 그룹 기록은 세 경보 CNT에 fan-out됐고 작업자 ESP의 DANGER 모드를 확인했다. Pi MN-CSE는 노트북 IN-CSE에 등록되어 있으며 이력은 별도 HTTP/Mca 브리지가 옮기고 노트북 대시보드가 조회한다. Vision의 자동 부팅 등록과 장기 신뢰성은 확인하지 않았다. 11월 20일 점검 시 DHCP 예약은 구성되지 않았다. SG90은 모형 포크를 움직이며 실제 지게차 주행 모터를 제어하지 않는다. 자세한 [아키텍처](docs/architecture.md)와 [배포 기록](docs/deployment.md)를 참고한다.
+
+> **촬영 후 Pi 확인:** RiskEngine Origin은 `Criskengine`이고 입력·기록은 HTTP polling/write다. 운영 그룹에 `macp`를 연결하고 세 alert CNT의 `Criskengine` 권한을 CREATE로 제한했다. events와 세 alert CNT의 기록은 성공했지만 이 ACP 재시험에서는 ESP 알림 수신이나 장치 출력을 확인하지 않았다. MEC IPE는 수동 등록한 Vision 서비스의 주소를 MEC011 등록부에서 발견해 최신 oneM2M 데이터를 조회했다. VisionAI를 잠시 실행했을 때 데이터 상태가 `INACTIVE → ACTIVE`로 바뀌었고 시험 뒤 다시 중지했다. 등록 상태 `ACTIVE`와 데이터 신선도 상태는 별개다.
 
 ---
 
@@ -13,7 +17,7 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 지게차와 크레인은 차체 구조상 사각지대가 넓어, 후진이나 선회 중 작업자와 부딪히거나 끼이는 사고가 반복된다. 기존 후방카메라와 경광등은 운전자를 보조할 뿐 작업자에게 직접 경고하지 않고, 장비가 스스로 멈추지도 않는다. UWB·BLE 태그 방식은 작업자가 장비를 착용해야 해서, 미착용이나 배터리 방전 시 보호 공백이 생긴다.
 
-### 1.2 목표
+### 1.2 목표 — 아래 기능의 현장 동작을 모두 확인한 것은 아님
 
 | 목표 | 내용 |
 |---|---|
@@ -24,30 +28,31 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 ---
 
-## 2. 시스템 구성
+## 2. 확인된 시스템 구성
 
-> **현재 프로토타입과 목표를 구분한다.** 2026-11-12 기준 현태의 설명은 LD2450 → Raspberry Pi UART 직접 연결이다. GitHub 코드와 별도 모의 시험이 존재하지만 실제 레이더·Vision·경보기의 전체 통합은 미검증이다. 서버별 이름·ID도 실제 조회값과 팀 제안을 구분한다. 자세한 내용은 [아키텍처와 통합 상태](docs/architecture.md)를 참고한다.
-
-### 현재 프로토타입
+Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 정리했다. tinyIoT는 Pi의 **oneM2M MN-CSE**다. 운영 MEC IPE는 서비스 이름으로 Vision 데이터 서비스를 발견하고, 허용된 oneM2M CSE 안의 주소만 조회한다. 서비스 이름과 주소를 분리해 엣지 장비 확장을 위한 경로를 마련했으며, 현재는 한 서비스를 수동 등록해 확인했다. MEP의 앱 배치·관리가 확인되지 않아 MN-CSE, VisionAI, IPE·adapter를 MEC App으로 분류하지 않는다.
 
 ```mermaid
 flowchart LR
-  LD["LD2450"] -- "UART · 현태 설명" --> UP["Pi 레이더 업로더"]
-  UP -. "radar CIN<br/>실제 동작 재확인" .-> RAD["MN-CSE<br/>radar"]
-  RAD -. "조회/알림<br/>모의 연동 확인" .-> ENGINE["RiskEngine<br/>거리 · CPA"]
-  ENGINE -. "모의 events 기록" .-> EVENTS["MN-CSE<br/>events"]
-  CAM["카메라"] -. "Vision 입력" .-> VISION["Vision AI"]
-  RAD -. "radar 조회" .-> VISION
-  VISION -. "fusedTracks 생성" .-> FUSED["MN-CSE<br/>fusedTracks"]
-  FUSED -. "모의 CIN 관찰" .-> ENGINE
-  ENGINE -. "alert 작성 미구현" .-> ALERT["MN-CSE<br/>alert"]
-  ALERT -. "HTTP 알림 코드<br/>전체 연결 미검증" .-> ESP["ESP8266<br/>경고 장치"]
-  MN["MN-CSE"] -. "연결 성공 보고<br/>데이터 전달 별도 검증" .-> IN["IN-CSE"]
+  LD["LD2450"] -->|"UART"| RIPE["Radar Collection IPE / MN-AE"]
+  RIPE -->|"Mca · MQTT radar CIN"| MN["Pi tinyIoT MN-CSE<br/>oneM2M MN-CSE"]
+  CAM["C270"] -->|"USB"| VIS["VisionAI"]
+  VIS -->|"Mca · HTTP fusedTracks CIN"| MN
+  RAD["radar CNT"] <-->|"Mca · HTTP polling"| RE["RiskEngine<br/>separate install"]
+  FUSED["fusedTracks CNT"] <-->|"Mca · HTTP polling"| RE
+  RE -->|"HTTP CIN create"| OUT["events + grp-safezone-alarms/fopt"]
+  OUT -->|"verified fopt fan-out"| ALERTS["forklift / worker / zone alert CNTs"]
+  ALERTS -->|"Mca · SUB HTTP notification"| ESP["ESP8266 devices"]
+  MN <-->|"Mca · HTTP"| BR["MN→IN bridge AE"]
+  BR -->|"Mca · HTTP summary create"| IN["Laptop Docker IN-CSE"]
+  DASH["Notebook dashboard"] -->|"Mca · HTTP"| MN
+  DASH -->|"Mca · HTTP"| IN
+  IPE["MEC IPE<br/>Vision status"] -->|"Mca · GET state / POST health"| MN
+  MN -->|"Mcc · CSE registration"| IN
+  IPE <-->|"HTTP · MEC011 service discovery"| MECREG["Pi-local mock MEC011 registry<br/>Vision service manually registered"]
 ```
 
-점선은 코드·모의 시험 또는 향후 연결을 나타내며 실제 장비의 종단 간 성공을 뜻하지 않는다. 현재 ESP8266은 현태 설명에 따르면 LD2450에 직접 연결되지 않고 tinyIoT HTTP 알림을 받는다.
-
-**통신 목표:** oneM2M MQTT Binding과 SUB/notification을 사용한다. 독립 시험 서버에서 모의 radar MQTT 발행 → SUB 알림 → RiskEngine → MQTT events 기록을 확인했다. 현재 GitHub의 기존 RiskEngine 기본 통신은 HTTP이며 MQTT 엔진은 별도 작업본이다. 실제 장치 및 최종 서버 적용 여부는 별도로 확인한다.
+Radar 업로더만 Pi에서 MQTT로 radar CIN을 만든다. RiskEngine이 레이더와 설정된 Vision CIN을 HTTP polling해 위험을 판단하고, `events`와 경보 그룹에 HTTP로 기록한다. VisionAI는 USB 카메라 영상을 처리해 HTTP로 `fusedTracks`를 쓴다. 두 ESP의 SUB 알림도 HTTP다. MN은 노트북 IN에 Mcc로 등록되어 있고, 이벤트 이력 전달은 브리지 AE가 양쪽 CSE에 Mca/HTTP 요청을 보내는 별도 경로다. 노트북 대시보드는 MN 현재 상태와 IN 이력을 조회한다. Pi 임시 대시보드는 이 구조도에서 제외했다.
 
 ### oneM2M 서버로 tinyIoT를 선택한 이유
 
@@ -61,44 +66,43 @@ flowchart LR
 
 LD2450의 2D 표적 좌표로 현재 거리를 계산하고, 연속 좌표와 시간으로 상대속도 및 최근접 시점 `t_cpa`, 최근접 거리 `d_cpa`를 추정한다. `t_cpa`는 위험 반경에 처음 진입하는 시각이 아니라 일정한 상대속도를 가정한 최근접 시각이다. 입력 누락·오래된 데이터는 `UNKNOWN`으로 구분한다.
 
-현재 거리 기준 warning 3m, danger 1.5m 및 CPA 기준은 **시험용 가설**이다. 실제 산업안전 기준이나 검증된 제동 거리가 아니다. 센서 좌표계 회전, 설치 오프셋, 차체 크기, 실제 표적 슬롯 유지와 수신 지연은 추가 검증이 필요하다.
+현재 Pi 시연 설정은 warning 2.5 m, danger 1.5 m, 입력 freshness 5초, 표적 연결 간격 상한 5초다. 팀이 선택한 시연값이며 최적 추적 설정, 산업안전 기준 또는 검증된 제동 거리가 아니다. 별도 11월 18일 모형 시험은 1.0 m/0.5 m를 사용했으므로 녹화 날짜별 설정을 혼합하지 않는다. 센서 좌표계, 장착 오프셋, 실제 표적 유지와 수신 지연은 추가 검증이 필요하다.
 
 ### 3.2 경보와 장치 제어
 
-현재 GitHub 엔진은 위험 상태를 `events`에 기록하는 코드가 있으며 `alert` 작성과 실제 장치 감속·정지의 전체 연동은 미검증이다. Pi에서 확인된 `LOCAL_DECISION`은 임시 거리 판단으로 alert CIN을 쓰는 별도 코드다. RiskEngine으로 전환할 때 작성 주체가 충돌하지 않도록 조정해야 한다.
+Pi 운영 RiskEngine은 별도 설치 snapshot에서 실행되며, `RADAR_LOCAL_DECISION=0`일 때 엔진이 위험을 판단해 `events`와 경보 그룹에 기록한다. 그룹 `/fopt` fan-out으로 세 alert CNT에 DANGER가 기록되고 worker ESP가 위험 모드에 들어가는 것을 확인했다. 시연에서는 SG90 포크 서보가 모형 포크를 멈추는 장면도 보였다. 카메라는 위험도를 올릴 수 있지만 내리지는 않으며, 레이더 입력이 만료되면 UNKNOWN을 기록하고 모형 포크를 정지한다. 실제 지게차 주행 모터 제어나 안전 인터락은 아니다.
 
-네트워크 단절 시 독립적으로 모터를 정지시키는 로컬 인터락, `UNKNOWN` 시 장치 동작 및 재가동은 **목표·미확정**이다. LED 점등, 부저, 실제 모터 제어와 각각의 실패 동작을 따로 확인한다.
+레이더 입력 만료 후 `UNKNOWN`과 SG90 모형 포크 정지는 시연했다. 엔진·CSE·Wi-Fi 자체가 끊겼을 때의 독립 정지, 부팅 후 그룹 복구, 모든 출력 조합과 장기 신뢰성은 검증하지 않았다.
 
 ### 3.3 Vision과 IN-CSE
 
-Vision AI는 카메라 정보와 레이더를 융합해 `fusedTracks`를 발행하는 코드가 있다. RiskEngine의 Vision 입력 관찰은 별도 작업본·모의 시험 단계이며 Vision 조언을 최종 위험 판단에 반영하는 규칙은 미정이다. Pi MN–노트북 IN의 연결 성공은 보고됐으나, 상위 등록과 `events` 데이터 전달은 별도로 검증한다.
+시연 영상에서 VisionAI는 C270 입력을 처리해 레이더와 같은 사람을 confirmed로 연결했고, 쭈그린 자세 신호가 WARNING을 DANGER로 올렸다. 카메라 AI를 중지하는 경우와 레이더 입력이 만료되는 경우도 각각 시연했다. 노트북 대시보드는 MN 현재 상태와 브리지가 IN에 쌓은 이력을 표시한다. VisionAI는 시연 중 실행했으며 부팅 시 자동 시작 설정은 별도 확인 대상이다.
 
 ## 4. oneM2M 리소스 설계
 
 ### 4.1 리소스 트리
 
-아래는 **팀 제안 이름**이다. 실제 서비스에 적용됐다고 단정하지 않는다. MN 제안은 `TinyIoT-MN` / `/tinyiot-mn`, IN 제안은 `TinyIoT-IN` / `/tinyiot-in`이다. 기존 Pi 서비스 및 독립 시험 서버는 서로 다른 설정·DB를 사용했다. [전환 안내](docs/cse-naming.md)
+다음 리소스 트리는 Pi에서 조회해 확인한 경로와 그룹 구성을 요약한다. 독립 시험 서버와 운영 Pi는 서로 다른 설정·DB를 사용한다.
 
 ```text
-TinyIoT-MN                   [CSEBase, 제안]
-├─ defaultACP                [ACP]
-├─ grp-safezone-alarms       [GRP] 경보 장치 그룹 (lbl 검색으로 구성, /fopt 한 번 쓰기 → 모든 alert)
-├─ AE-forklift01             [AE]  lbl safezone:forklift, zone:A
-│  ├─ radar                  [CNT] radar CIN (lbl safezone:sensor, sensor:ld2450, unit:mm)
-│  └─ alert                  [CNT] 지게차 정지 경보 (lbl safezone:alarm)
-├─ AE-worker01               [AE]  작업자 ESP, lbl type:worker-alarm
-│  └─ alert                  [CNT] 작업자 경보 (그룹 구성원)
+TinyIoT-MN
+├─ grp-safezone-alarms       [GRP] forklift / worker / zone alert CNT 3개
+├─ AE-forklift01             [AE]
+│  ├─ radar                  [CNT] LD2450 frame CIN
+│  └─ alert                  [CNT] forklift SUB uses HTTP /notify
+├─ AE-worker01               [AE] lbl type:worker-alarm
+│  └─ alert                  [CNT] worker SUB nu=Cworker01 → AE poa
 ├─ AE-riskengine             [AE]
-│  └─ events                 [CNT] 위험 판단 기록
+│  └─ events                 [CNT] RiskEngine event history
 ├─ AE-VisionAI               [AE]
-│  └─ fusedTracks            [CNT] Vision 융합 결과
+│  └─ fusedTracks            [CNT] camera/radar Vision output
 ├─ AE-zonealarm01            [AE]
-│  └─ alert                  [CNT] 구역 경광등 (lbl safezone:alarm, 그룹 구성원)
-└─ AE-camera01               [AE]
-   └─ detect                 [CNT] 기존 카메라 구상
+│  └─ alert                  [CNT] group member; no physical zone device
+└─ AE-mecIPE                 [AE]
+   └─ status                 [CNT] Vision service-health state
 ```
 
-실제 CNT·SUB·ACP 존재와 데이터 접근 권한은 실행 중인 서버에서 조회해야 한다. `mni`는 보관할 CIN 수의 제한이다. 표적이 없는 상태에서 실제 업로더가 빈 `targets`를 주기적으로 보내는지는 확인 중이다.
+worker AE 재등록 후 새 alert CNT RI를 경보 그룹 `mid`에 연결했다. 후속 ACP 변경으로 운영 group `macp`와 세 alert CNT에 `Criskengine` CREATE 권한을 설정하고 `cnm=3`을 확인했다. 녹화 시연에서는 `/fopt` fan-out 뒤 worker ESP의 DANGER 모드를 관찰했으며, 촬영 후 ACP 재시험은 세 CNT 기록까지만 확인했다. 정확한 ACP/SUB URI와 서버별 CSE naming은 [배포 기록](docs/deployment.md)에서 구분한다.
 
 주요 리소스 유형: CSEBase(ty 5)는 서버 최상위, ACP(1)는 접근 정책, AE(2)는 애플리케이션, CNT(3)는 데이터 컨테이너, CIN(4)은 개별 데이터, GRP(9)는 그룹, SUB(23)는 변경 알림 설정이다.
 
@@ -108,11 +112,12 @@ TinyIoT-MN                   [CSEBase, 제안]
 
 | 구간 | 현재 상태 |
 |---|---|
-| radar → RiskEngine | GitHub MVP는 HTTP polling 및 HTTP 알림 수신 코드. 별도 작업본에서 MQTT SUB 알림을 모의 시험 |
-| alert → ESP8266 | HTTP 알림 수신 펌웨어·SUB 스크립트가 있으나 RiskEngine부터 실제 장치까지 전체 연결은 미검증 |
-| events → IN-CSE | CSE 연결과 events 실제 전달·조회는 별도 검증 대상 |
+| radar CIN → RiskEngine | Pi 업로더 MQTT CIN 생성, RiskEngine HTTP polling 확인 |
+| RiskEngine → events / alert group | Pi 별도 설치본이 HTTP로 events와 `/fopt` 기록. 세 alert CNT의 DANGER 확인 |
+| alert SUB → ESP8266 | Worker `nu=Cworker01` → AE poa 경로와 worker 위험 모드 확인. Forklift `/notify` 경로의 모형 동작은 11/15·11/18 시험 보고 |
+| events → IN-CSE | MN→IN 브리지 HTTP polling/write와 노트북 Docker IN 기록 확인 |
 
-MQTT의 토픽 subscribe와 oneM2M의 SUB 리소스는 다른 개념이다. SUB 확인 요청과 알림·응답, 실패 후 복구는 실제 CSE 버전에서 확인한다.
+MQTT oneM2M binding과 HTTP 요청, oneM2M SUB resource는 서로 다른 층의 기능이다. 현재 MQTT는 radar CIN 생성 구간이고, RiskEngine·Vision write/read, ESP notification, MN→IN bridge는 HTTP다. Pi 운영 MEC IPE가 MEC011에서 수동 등록한 Vision 서비스를 발견하고 실제 oneM2M CIN의 freshness를 조회했다. 여러 엣지 장비에 대한 서비스 자동 등록·주소 갱신, 적절한 서비스 자동 선택과 원격 CSE 연결은 다음 단계다.
 
 ### 4.3 데이터 형식 (con)
 
@@ -131,12 +136,13 @@ CIN의 `con`은 JSON 문자열일 수 있다. Vision의 `ttc_s`와 RiskEngine의
 
 | 구간 | 현재 확인 및 목표 |
 |---|---|
-| LD2450 → Pi | UART 직접 연결: 현태의 현재 프로토타입 설명 |
-| 장치·업로더 → MN | HTTP 코드와 모의 MQTT CIN 생성 시험. 실제 장치별 MQTT 발행은 확인 필요 |
-| MN ↔ RiskEngine | GitHub MVP는 HTTP polling/HTTP 알림 코드. 별도 작업본에서 MQTT 알림 입력 및 MQTT events 출력을 모의 시험 |
-| MN → Vision → fusedTracks | Vision 코드 기준 HTTP 조회·발행; 실제 장치 통합 확인 필요 |
-| MN → ESP | HTTP 알림 수신 코드; 현재 SUB 및 전체 연동 확인 필요 |
-| MN ↔ IN | 연결 성공 보고. 실제 리소스 전달·이력 조회는 별도 확인 |
+| LD2450 → Radar Collection IPE | UART, Pi radar uploader |
+| Radar IPE → MN-CSE | MQTT oneM2M radar CIN create |
+| VisionAI → MN-CSE | C270 USB input; VisionAI HTTP fusedTracks CIN create |
+| MN-CSE ↔ RiskEngine | HTTP polling for radar/Vision; HTTP create for events and alert-group `/fopt` |
+| alert CNT → ESP | HTTP SUB notification over Mca; worker DANGER mode verified; forklift servo/buzzer in dated model tests |
+| MN-CSE → IN-CSE | MN registers with laptop IN over Mcc; a separate bridge AE copies event summaries over HTTP/Mca |
+| MEC011 / Vision status | Operational IPE discovered the manually registered `fusedTracks` service and read actual oneM2M data; status changed INACTIVE→ACTIVE during a brief VisionAI run |
 
 ## 5. 저장소 구조
 
@@ -155,7 +161,7 @@ Sejong_4IoT_OneM2M/
 ├─ onem2m/                      MN→IN 브리지, MEC 생존 확인 IPE, 경보 장치 그룹(lbl+grp), 지연 측정, 구독·CSE 스크립트
 ├─ dashboard/                   관제 대시보드 (MN 실시간, IN 이력, VisionAI 상태)
 ├─ esp8266/                     지게차 노드(alert_node), 작업자 노드(worker_node), MQTT 판
-├─ systemd/                     시연 서비스 (safezone.target 아래 레이더·엔진·브리지·대시보드·IPE·VisionAI)
+├─ systemd/                     Pi 서비스 (radar·engine·bridge·MEC IPE; 로컬 dashboard unit은 임시)
 ├─ tools/preflight.py           시연 전 점검 (서비스·데이터·경보 작성자·죽은 구독)
 ├─ experiments/mec011-host-a/   MEC 011 서비스 등록·발견 실험, oneM2M↔MEC 연동 AE
 └─ camera/                      (초기 버전) 웹캠 모션 감지
@@ -171,36 +177,36 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 
 | 장비 | 수량 | 용도 |
 |---|---|---|
-| HLK-LD2450 24GHz 레이더 | 1 | 지게차 후방 작업자 무태그 감지 (Pi UART) |
-| Raspberry Pi 4B | 1 | MEC host: tinyIoT MN·IN, 레이더 업로더, RiskEngine, VisionAI, 대시보드 |
-| 로지텍 C270 웹캠 | 1 | VisionAI |
-| ESP8266 NodeMCU 1.0 + HW-389 확장보드 | 1 | 지게차 경보 노드 (서보·부저) |
-| ESP8266 NodeMCU v3 (LoLin) | 1 | 작업자 경보 태그 |
-| SG90 서보 | 1 | 지게차 포크 동작 표현, 위험 시 정지 |
+| HLK-LD2450 24GHz 레이더 | 1 | Pi UART로 작업자 무태그 감지 입력 |
+| Raspberry Pi 4B | 1 | tinyIoT MN-CSE, radar uploader, RiskEngine, VisionAI, bridge, MEC IPE |
+| Logitech C270 | 1 | USB 카메라; VisionAI가 영상 처리 |
+| NodeMCU ESP8266 1.0 + HW-389 | 1 | 축소 지게차 경보 노드 |
+| SG90 서보 | 1 | 모형 포크 움직임·정지. 주행 모터가 아님 |
 | 능동 부저 TMB12A05 | 2 | 지게차·작업자 경보음 |
-| 9V 건전지 / USB 보조배터리 | 각 1 | 지게차 노드 / 작업자 태그 전원 |
-| 5V 3A USB-C 전원 | 1 | Raspberry Pi |
-| 3D 프린트 부품 | - | 지게차 모형(후방 레이더 창), 작업자 태그 케이스 |
-| 휴대폰 핫스팟, 노트북 | - | 현장 네트워크, SSH 접속·대시보드·ESP 업로드 |
+| NodeMCU ESP8266 v3 (LoLin) | 1 | 작업자 태그, 부저와 LED 표시창 |
+| 9 V 배터리 | 1 | 모형 안의 forklift alarm node 전원 |
+| Pi용 5 V, 3 A 전원 | 1 | Raspberry Pi 전원 |
+| USB 보조배터리 | 1 | 휴대폰 핫스팟 외부 구성 시험에서 사용 |
+| 노트북·휴대폰 핫스팟 | 각 1 | Docker IN-CSE, 시연 대시보드, 네트워크·SSH·펌웨어 업로드 |
+| 3D 프린팅 부품 | 필요 수량 | 지게차 축소 모형, 레이더 장착부, 작업자 태그 케이스 |
 
 ### 6.2 소프트웨어
 
 | 구분 | 내용 |
 |---|---|
 | MEC OS | Raspberry Pi OS Lite 64-bit (Debian Trixie) |
-| oneM2M CSE | tinyIoT (C, DB는 SQLite) |
-| 레이더·엔진 | Python 3, pyserial |
-| ESP8266 | Arduino IDE, esp8266 보드 패키지, ArduinoJson |
-| 카메라 | Python 3, OpenCV |
-| 개발 도구 | VS Code Remote-SSH, Git/GitHub |
-| MQTT 브로커 | Eclipse Mosquitto (oneM2M MQTT 바인딩) |
+| oneM2M CSE | tinyIoT MN-CSE 및 IN-CSE (C, DB는 SQLite) |
+| 레이더·RiskEngine·VisionAI·브리지·대시보드·IPE | Python 3 |
 | VisionAI | Ultralytics YOLO11n-pose (NCNN), OpenCV |
+| MQTT 브로커 | Eclipse Mosquitto (Pi, oneM2M MQTT 바인딩) |
+| IN-CSE | Docker 컨테이너 |
 | ESP8266 | Arduino IDE, esp8266 보드 패키지 3.1.2, ArduinoJson 7 |
+| 개발 도구 | VS Code Remote-SSH, Git/GitHub |
 | 3D 모델링 | OpenSCAD |
 
 ### 6.3 배선
 
-회로도: [레이더 노드](docs/wiring/1_radar_pi_uart.png) · [지게차 경보 노드](docs/wiring/2_forklift_alarm_node.png) · [작업자 경보 태그](docs/wiring/3_worker_alarm_tag.png)
+회로도: [레이더 노드](docs/Schematics%20and%20circuit%20diagrams/1_radar_pi_uart.png) · [지게차 경보 노드](docs/Schematics%20and%20circuit%20diagrams/2_forklift_alarm_node.png) · [작업자 경보 태그](docs/Schematics%20and%20circuit%20diagrams/3_worker_alarm_tag.png)
 
 **① 레이더 노드: LD2450 → Raspberry Pi 4 (UART)**
 
@@ -211,7 +217,7 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | TX | 핀 10 (GPIO15, RXD) |
 | RX | 핀 8 (GPIO14, TXD) |
 
-256000bps, 8N1, 3.3V 레벨. `raspi-config`에서 시리얼 로그인 셸은 끄고 시리얼 하드웨어는 켠다. 웹캠(C270)은 USB로 연결한다.
+통신 규격은 256000 bps, 8N1, 3.3 V 레벨이다. `raspi-config`에서 시리얼 로그인 셸은 끄고 시리얼 하드웨어는 켠다. C270은 USB로 Pi에 연결된다. 지게차 모형의 SG90은 포크를 움직이며, 차량 주행 모터가 아니다.
 
 **② 지게차 경보 노드: NodeMCU 1.0 + HW-389 확장보드**
 

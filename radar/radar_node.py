@@ -30,13 +30,16 @@ LOCAL_DECISION = os.getenv('RADAR_LOCAL_DECISION', '1') != '0'
 # alert를 쓸 곳. 경보 장치 그룹(onem2m/alarm_group.py)을 만들었으면 grp-safezone-alarms/fopt로 바꾸면
 # MN이 지게차·작업자·구역 경보 컨테이너에 같은 alert를 한 번에 만든다(fan-out)
 ALERT_PATH = os.getenv('RADAR_ALERT_PATH', 'AE-forklift01/alert').strip('/')
-WARN_MM = 1000           # warn 거리 (mm): 경보만
-DANGER_MM = 500          # danger 거리 (mm): 경보 + 지게차 정지
+WARN_MM = 3000           # Pi 파일과 동기화한 로컬 fallback. 운영은 RADAR_LOCAL_DECISION=0
+DANGER_MM = 1500         # Pi 파일과 동기화한 로컬 fallback. 운영 알림은 RiskEngine이 판정
 RANK = {'safe': 0, 'warn': 1, 'danger': 2}
 OFF_DELAY = 1.5          # 이 시간(초) 동안 계속 범위 밖이어야 해제
 STALE_S = float(os.getenv('RADAR_STALE_S', '2.0'))  # 이 시간(초) 동안 정상 프레임이 없으면 alert unknown(지게차 정지)
 CON_AS_STRING = True     # tinyIoT는 con에 문자열만 받음
 HTTP_TIMEOUT = 5         # (HTTP) tinyIoT 응답 대기 시간
+# (MQTT) radar 요청은 CSE 응답을 받을 때까지(최대 이 시간) 다음 radar를 보내지 않고, 그동안 들어온 프레임은 버린다.
+# MN이 느리면 요청이 브로커에 쌓여 몇 초 전 값이 저장되기 때문(오래된 값은 엔진이 안 쓰고 지연만 만든다). 0이면 예전처럼 보내기만 한다
+RADAR_WAIT_S = float(os.getenv('RADAR_MQTT_WAIT_S', '2.0'))
 LOG_UPLOAD = True        # 진단용 로그
 
 ser = serial.Serial(SERIAL_PORT, 256000, timeout=1)
@@ -52,6 +55,8 @@ if TRANSPORT == 'mqtt':
 
 def post_cin(path, con):  # tinyIoT 컨테이너에 데이터 한 건 기록
     if TRANSPORT == 'mqtt':
+        if path.endswith('/radar') and RADAR_WAIT_S > 0:   # 응답이 올 때까지 기다려 쌓이지 않게 함
+            return mq.create_cin(path, con, wait_s=RADAR_WAIT_S) is not None
         mq.create_cin(path, con)          # 보내기만 하고 응답은 백그라운드에서 확인 (실패만 출력)
         return None  # MQTT 응답은 비동기로 확인
     body = {'m2m:cin': {'con': json.dumps(con) if CON_AS_STRING else con}}
@@ -71,6 +76,7 @@ def post_cin(path, con):  # tinyIoT 컨테이너에 데이터 한 건 기록
 # 업로드 전담 스레드: 메인 루프가 서버 응답을 기다리느라 멈추지 않게 함
 q = queue.PriorityQueue()
 seq = itertools.count()
+radar_busy = threading.Event()   # radar 요청이 아직 응답을 기다리는 중 (이동안 새 프레임은 버림)
 
 def enqueue(path, con, prio):   # prio 0 = alert(우선), 1 = radar
     q.put((prio, next(seq), path, con))
@@ -80,8 +86,18 @@ def worker():
     while True:
         _, _, path, con = q.get()
         t0 = time.time()
-        ok = post_cin(path, con)
-        if LOG_UPLOAD and TRANSPORT == 'mqtt':
+        is_radar = path.endswith('/radar')
+        try:
+            ok = post_cin(path, con)
+        finally:
+            if is_radar:
+                radar_busy.clear()
+        if LOG_UPLOAD and TRANSPORT == 'mqtt' and is_radar and RADAR_WAIT_S > 0:
+            gap = f'{t0 - last:.2f}s' if last is not None else '-'
+            print(f'radar: 표적 {len(con["targets"])}개, MQTT 응답 '
+                  + (f'{time.time() - t0:.2f}s' if ok else f'없음({RADAR_WAIT_S:.0f}s 넘음)') + f', 간격 {gap}')
+            last = t0
+        elif LOG_UPLOAD and TRANSPORT == 'mqtt':
             gap = f'{t0 - last:.2f}s' if last is not None else '-'
             print(f'{path}: MQTT 요청 시도, 간격 {gap} (응답은 별도 확인)')
             if path.endswith('/radar'):
@@ -152,8 +168,9 @@ while True:
     now = time.time()                # ts: Pi가 이 프레임을 시리얼에서 다 받아 해석한 시각
 
     # 1) 레이더 데이터: 표적이 없어도(targets: []) UPLOAD_INTERVAL마다 전송 시도
-    #    이전 요청이 대기열에 남아 있으면 이번 프레임은 건너뜀
-    if now - last_up >= UPLOAD_INTERVAL and q.empty():
+    #    이전 요청이 대기열에 남아 있거나 아직 응답을 기다리면 이번 프레임은 버림(늘 최신 값만 보냄)
+    if now - last_up >= UPLOAD_INTERVAL and q.empty() and not radar_busy.is_set():
+        radar_busy.set()
         enqueue('AE-forklift01/radar', {'ts': round(now, 2), 'targets': targets}, 1)
         last_up = now
 

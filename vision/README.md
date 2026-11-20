@@ -59,13 +59,27 @@ python3 -m venv .venv
 ```
 팀 제안 기본 CSE 이름은 `TinyIoT-MN`이다. Pi에 실제 적용했는지 먼저 확인하고, 다르면 `config.local.yaml`의 `onem2m: {cse_name: ...}`에 실제 이름을 지정한다. [전환 안내](../docs/cse-naming.md)
 
+### Pi 녹화 시연 실행
+
+2026-11-20 시연에서는 C270 영상을 VisionAI가 연속 처리해 새 `fusedTracks`를 만들었고, RiskEngine이 이를 fresh 입력으로 읽었다. 카메라·레이더가 같은 사람을 confirmed로 연결하고 쭈그린 자세에 따라 WARNING을 DANGER로 올리는 장면도 확인했다. Pi 실행 환경은 `/home/user/vision4iot`였다.
+
+카메라가 연결되어 있고 Pi MN-CSE가 실행 중인지 확인한 뒤, VisionAI를 터미널에서 시작한다. demo 동안 이 프로세스를 계속 실행한다.
+
+```bash
+cd /home/user/vision4iot
+ls /dev/video*
+.venv/bin/python -m vision4iot.main --config config.pi.yaml --radar onem2m --output onem2m --base-url http://127.0.0.1:3000
+```
+
+실행 중에는 C270의 새 프레임과 `cam_ok`, `AE-VisionAI/fusedTracks/la`의 생성 시각을 확인한다. RiskEngine이 같은 최신 CIN을 fresh로 읽는지도 확인한다. 위 시연은 수동으로 프로세스를 시작한 기록이며, 부팅 시 자동 시작을 보장하는 systemd 설정과는 별도다. 자동 시작을 구성했다면 재부팅 후 프로세스·새 CIN·MEC IPE 상태를 각각 확인한다.
+
 카메라 위치 맞추기 → 바닥 보정(카메라를 옮기면 다시):
 ```
 .venv/bin/python tools/live_view.py          # 브라우저 http://4Iot.local:8080, 바닥/벽 경계를 초록 선 근처로. 다 맞추면 Ctrl+C
 .venv/bin/python tools/calibrate.py --config config.pi.yaml --grab calib/site.jpg     # 테이프 점 6개 붙인 뒤 사진
 # 노트북: scp로 가져와 --image calib/site.jpg 로 점 클릭 (또는 u,v,x,y 점 파일로 --points) → calib/H.json을 Pi로
 ```
-지금 `calib/H.json`은 상희 집 임시 설치(약 1 m 높이) 기준 — 대회장에서 다시 한다. 예시 점 파일: `calib/points_c270.csv`.
+`calib/H.json`은 해당 카메라의 위치·각도와 해상도에 종속되며 Git에 포함되지 않는다. 장비를 새로 설치하거나 카메라 위치·각도·해상도를 바꾸면 그 장비에서 위 절차를 다시 수행한다. 최소 4점, 권장 6점 이상의 바닥 좌표를 측정하고 결과 격자와 실제 거리 여러 점을 대조한다. 기존 장비의 보정 파일은 별도 백업하되 다른 장비의 보정값으로 간주하지 않는다. 예시 점 파일: `calib/points_c270.csv`.
 
 시험용 도구(레이더·장비가 없을 때): `tools/start_local_cse.sh`(시험용 tinyIoT, 팀 설정과 포트 3000이 겹침),
 `tools/setup_test_acp.sh`(접근 권한), `tools/run_radar_flow.sh`(가짜 수신기 + 팀 엔진 `~/riskengine` + 레이더 업로더 sim).

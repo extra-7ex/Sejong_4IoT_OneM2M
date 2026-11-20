@@ -1,8 +1,8 @@
 """Runtime assumptions and tunable MVP parameters.
 
 All thresholds below are demonstration hypotheses, not validated safety limits.
-The receive-time clock is monotonic and is the only clock used for velocity,
-staleness, and track-loss timing. Sensor Unix timestamps are metadata only.
+Velocity, input silence, and track-loss timing use a monotonic clock. The
+application also validates the sensor Unix timestamp against its wall clock.
 """
 
 from dataclasses import dataclass
@@ -16,7 +16,9 @@ def _env_float(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class RiskConfig:
-    # 지게차 노드(radar_node.py WARN_MM·DANGER_MM)와 같은 기준. 관제 화면과 실제 정지가 어긋나지 않게 한다.
+    # Planning thresholds: WARNING 3.0 m / DANGER 1.5 m.
+    # The recorded Pi demo overrode WARNING to 2.5 m; DANGER stayed 1.5 m.
+    # Source defaults below are an MVP profile, not validated safety limits.
     warning_distance_m: float = 1.0
     danger_distance_m: float = 0.5
     warning_ttc_s: float = 3.0
@@ -26,6 +28,8 @@ class RiskConfig:
     min_speed_mps: float = 0.05
     max_sample_interval_s: float = 0.75
     stale_after_s: float = 1.0
+    radar_max_age_s: float = 3.0
+    radar_future_skew_s: float = 1.0
     target_loss_grace_s: float = 1.0
     max_target_jump_m: float = 2.5
     release_hold_s: float = 3.0
@@ -46,6 +50,8 @@ class RiskConfig:
             min_speed_mps=_env_float("RISK_MIN_SPEED_MPS", 0.05),
             max_sample_interval_s=_env_float("RISK_MAX_SAMPLE_INTERVAL_S", 0.75),
             stale_after_s=_env_float("RISK_STALE_AFTER_S", 1.0),
+            radar_max_age_s=_env_float("RISK_RADAR_MAX_AGE_S", 3.0),
+            radar_future_skew_s=_env_float("RISK_RADAR_FUTURE_SKEW_S", 1.0),
             target_loss_grace_s=_env_float("RISK_TARGET_LOSS_GRACE_S", 1.0),
             max_target_jump_m=_env_float("RISK_MAX_TARGET_JUMP_M", 2.5),
             release_hold_s=_env_float("RISK_RELEASE_HOLD_S", 3.0),

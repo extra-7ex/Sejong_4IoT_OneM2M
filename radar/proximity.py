@@ -1,6 +1,9 @@
-import serial, math, time, urllib.request
+import os, serial, math, time, urllib.request
 
-ESP = 'http://192.168.219.104'   # ESP8266 IP
+ESP = os.getenv('SAFEZONE_ESP_URL')
+if not ESP:
+    raise SystemExit('Set SAFEZONE_ESP_URL to the current ESP8266 URL before running.')
+ESP = ESP.rstrip('/')
 WARN_MM = 500                    # 경고 거리 (mm)
 OFF_DELAY = 1.5                  # 이 시간(초) 동안 계속 범위 밖이어야 끔
 

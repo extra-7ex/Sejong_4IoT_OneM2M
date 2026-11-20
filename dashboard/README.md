@@ -2,6 +2,8 @@
 
 tinyIoT CSE에 쌓이는 레이더·위험 판단·Vision 데이터를 웹 화면으로 보여 주는 프로그램이다. Python 표준 라이브러리만 쓰므로 Pi나 노트북에 따로 설치할 것이 없다.
 
+**현재 녹화 시연 구성:** dashboard는 노트북에서 실행한다. Pi MN-CSE에서 현재 상태를 읽고, Pi bridge가 노트북 IN-CSE에 복사한 이벤트 이력을 표시한다. Pi의 port 8080 dashboard unit은 임시 로컬 화면이며 시연 시스템 아키텍처에는 포함하지 않는다.
+
 화면 구성:
 - **현재 상태**: RiskEngine의 최신 판정(`SAFE`/`WARNING`/`DANGER`/`UNKNOWN`), 사유, 거리, `t_cpa`, `d_cpa`
 - **위험 구역 맵**: 레이더 좌표계(지게차 기준, 전방 6 m, 시야각 ±60°) 위에 레이더 표적, Vision 추적, 위험·주의 거리 원, 핫스팟
@@ -26,6 +28,18 @@ DASH_CSE_BASE=http://<RPI_IP>:3000/TinyIoT-MN python3 -m dashboard.server --port
 ```
 
 PowerShell에서는 `$env:DASH_CSE_BASE="http://<RPI_IP>:3000/TinyIoT-MN"`을 먼저 실행한다. 브라우저에서 `http://<실행한 기기 IP>:8080`을 연다.
+
+### 노트북 시연 구성
+
+노트북에서 실행할 때는 Pi MN 주소와 노트북 IN 주소를 각각 지정한다. 실제 주소는 DHCP 환경에서 실행 직전에 조회한다.
+
+```bash
+DASH_CSE_BASE=http://<PI_IP>:3000/TinyIoT-MN \
+DASH_IN_BASE=http://<NOTEBOOK_IP>:3000/TinyIoT \
+python3 -m dashboard.server --port 8080
+```
+
+Pi에서 bridge를 실행할 때도 `BRIDGE_IN_BASE=http://<NOTEBOOK_IP>:3000/TinyIoT`로 설정한다. MN의 Mcc 등록은 별도 CSE 연결 관계이고, event history는 bridge의 HTTP/Mca create 경로로 이동한다.
 
 ### 장비 없이 화면 확인
 
@@ -67,7 +81,7 @@ Pi의 CSEBase 이름이 아직 `TinyIoT-mn`이거나 AE 이름이 `forklift01`�
 
 ## IN-CSE 이력 연동 (IN 모드)
 
-MN의 위험 이벤트를 IN-CSE에 쌓고, 대시보드가 그 이력을 보여 주는 구성이다. 현장 판단은 MN(엣지), 이력은 IN(클라우드)에 둔다.
+MN의 위험 이벤트를 bridge가 IN-CSE에 쌓고, 대시보드가 그 이력을 보여 주는 구성이다. 현장 판단은 MN(엣지), 이력은 IN에 둔다. MN의 Mcc 등록 관계와 event-copy bridge는 별도 흐름이다.
 
 ```text
 레이더 ──▶ MN  AE-forklift01/radar ──────────────────────────▶ 대시보드 (실시간 지도)
@@ -85,7 +99,7 @@ RiskEngine ─▶ MN  AE-riskengine/events ──▶ 브리지 ──▶ IN  AE-
    - 계속 켜 두려면 `systemd/safezone-bridge.service`를 쓴다.
 2. 대시보드를 IN 모드로 실행
    ```bash
-   DASH_IN_BASE=http://127.0.0.1:3001/TinyIoT python3 -m dashboard.server --port 8080
+   DASH_CSE_BASE=http://<PI_IP>:3000/TinyIoT-MN DASH_IN_BASE=http://<NOTEBOOK_IP>:3000/TinyIoT python3 -m dashboard.server --port 8080
    ```
    - 시작할 때 IN 이력을 불러오므로, 대시보드를 껐다 켜도 이력이 그대로 보인다.
    - 상단에 IN-CSE 연결 상태가, 이벤트 기록 제목에 `IN-CSE /AE-safezone/events`가 표시된다.
@@ -95,7 +109,7 @@ RiskEngine ─▶ MN  AE-riskengine/events ──▶ 브리지 ──▶ IN  AE-
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `BRIDGE_MN_BASE` | `http://127.0.0.1:3000/TinyIoT-MN` | MN-CSE |
-| `BRIDGE_IN_BASE` | `http://127.0.0.1:3001/TinyIoT` | IN-CSE (Pi 내부 IN) |
+| `BRIDGE_IN_BASE` | `http://127.0.0.1:3001/TinyIoT` | 대안 local test default; 시연에서는 노트북 IN 주소를 지정 |
 | `BRIDGE_EVENTS_PATH` | `/AE-riskengine/events/la` | 옮길 MN 이벤트 |
 | `BRIDGE_RADAR_PATH` | `/AE-forklift01/radar/la` | 위험 순간 좌표를 읽을 레이더 |
 | `BRIDGE_IN_AE` / `BRIDGE_IN_CNT` | `AE-safezone` / `events` | IN에 만들 리소스 |
@@ -110,4 +124,5 @@ python3 -m unittest dashboard.test_dashboard onem2m.test_mn_to_in_bridge
 
 - 확인함: 가짜 CSE로 화면·API·이력 저장·핫스팟 표시, 실제 Pi MN-CSE(`TinyIoT-MN`)와 가상 레이더(`radar/sim_rader.py`)로 실시간 표시
 - 확인함 (IN 모드): 실제 tinyIoT MN·IN 두 개를 띄우고 가상 레이더·RiskEngine·브리지·대시보드를 함께 실행. 이벤트 106건이 IN에 쌓였고(요약 최대 186바이트), IN 재시작 뒤에도 이력이 남고 브리지가 자동으로 이어 올림
-- 미확인: Pi에서의 IN 모드, 실제 LD2450
+- 실장비 시연 확인: 노트북에서 MN 현재 상태와 Docker IN 이력 조회, Pi bridge가 이벤트 요약을 IN에 기록
+- 미확인: DHCP 주소 자동 예약, 재부팅 뒤 전체 경로 복구

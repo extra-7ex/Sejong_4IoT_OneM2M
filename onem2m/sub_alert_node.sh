@@ -1,8 +1,8 @@
 #!/bin/bash
 # 지게차 alert(AE-forklift01/alert)에 ESP8266 알림 구독을 만든다. ESP를 켤 때마다(IP가 바뀔 때) 다시 실행한다.
 # 사용법: bash onem2m/sub_alert_node.sh <ESP IP> [구독 이름]
-#   지게차 ESP:  bash onem2m/sub_alert_node.sh 172.20.10.5
-#   작업자 ESP:  bash onem2m/sub_alert_node.sh 172.20.10.6 sub-worker01-forklift
+#   지게차 ESP:  bash onem2m/sub_alert_node.sh <FORKLIFT_ESP_IP>
+#   작업자 ESP:  bash onem2m/sub_alert_node.sh <WORKER_ESP_IP> sub-worker01-forklift
 # ESP IP는 ESP 시리얼 모니터(115200)의 "IP: ..." 줄에서 확인한다.
 CSE="${ONEM2M_CSE_BASE:-http://127.0.0.1:3000/TinyIoT-MN}"
 ESP=$1

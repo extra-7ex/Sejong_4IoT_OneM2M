@@ -6,8 +6,9 @@ import argparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging
+import math
 import time
-from typing import Any
+from typing import Any, Callable
 
 from .config import RiskConfig, one_m2m_config
 from .onem2m_http import HTTPAlertWriter, OneM2MHTTP
@@ -25,10 +26,16 @@ class RiskApplication:
     """Shared pipeline used by both polling and oneM2M notification transports."""
     def __init__(self, cse: OneM2MHTTP, engine: RiskEngine, event_writer=None, alert_writer=None,
                  vision_path: str = "", vision_max_age_s: float = 3.0,
-                 vision_future_skew_s: float = 0.5):
+                 vision_future_skew_s: float = 0.5,
+                 wall_clock: Callable[[], float] | None = None):
         self.cse = cse
         self.event_writer = event_writer or cse
         self.engine = engine
+        self.wall_clock = wall_clock or time.time
+        if (not math.isfinite(engine.config.radar_max_age_s)
+                or not math.isfinite(engine.config.radar_future_skew_s)
+                or engine.config.radar_max_age_s <= 0 or engine.config.radar_future_skew_s < 0):
+            raise ValueError("radar timestamp limits must be positive (future skew may be zero)")
         self.last_cin_ri: str | None = None
         self.last_published_status: str | None = None
         self.uncertain_event_status: str | None = None
@@ -48,6 +55,23 @@ class RiskApplication:
             frame = normalize_radar_cin(message)
         except InputError as exc:
             decision = self.engine.mark_input_fault(str(exc))
+            self.publish_transition(decision)
+            return decision
+        if frame.sensor_ts_unix_s is None:
+            reason = "radar_timestamp_missing"
+        else:
+            age = self.wall_clock() - frame.sensor_ts_unix_s
+            if not math.isfinite(age):
+                reason = "radar_clock_invalid"
+            elif age > self.engine.config.radar_max_age_s:
+                reason = "radar_timestamp_stale"
+            elif age < -self.engine.config.radar_future_skew_s:
+                reason = "radar_timestamp_future"
+            else:
+                reason = None
+        if reason:
+            self.last_cin_ri = None
+            decision = self.engine.mark_input_fault(reason)
             self.publish_transition(decision)
             return decision
         if dedupe and not frame.cin_ri:

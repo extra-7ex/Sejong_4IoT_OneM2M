@@ -30,7 +30,7 @@ def packet(ri="id-1", x=2000):
 class MQTTNotificationTests(unittest.TestCase):
     def setUp(self):
         self.cse = FakeCSE()
-        self.app = RiskApplication(self.cse, RiskEngine(RiskConfig(**LEGACY)))
+        self.app = RiskApplication(self.cse, RiskEngine(RiskConfig(**LEGACY)), wall_clock=lambda: 1)
         self.rx = MQTTNotifications(self.app, "127.0.0.1", 1883, "/oneM2M/req/test/engine/json")
 
     def deliver(self, payload, retain=False):
@@ -80,7 +80,7 @@ class MQTTNotificationTests(unittest.TestCase):
         # The release hold is off here; test_vision_advice covers the 3 s SAFE hold.
         now = [10.0]
         cse = FakeCSE()
-        app = RiskApplication(cse, RiskEngine(RiskConfig(release_hold_s=0, **LEGACY), clock=lambda: now[0]))
+        app = RiskApplication(cse, RiskEngine(RiskConfig(release_hold_s=0, **LEGACY), clock=lambda: now[0]), wall_clock=lambda: 1)
         rx = MQTTNotifications(app, "127.0.0.1", 1883, "/test")
 
         def send(ri, targets):
