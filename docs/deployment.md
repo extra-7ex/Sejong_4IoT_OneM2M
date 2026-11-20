@@ -24,7 +24,7 @@
 
 C270은 Pi에서 인식됐다. 녹화 시연 동안 `/home/user/vision4iot` 환경의 VisionAI가 연속 실행되어 새 `fusedTracks`를 만들고 RiskEngine이 이를 fresh로 읽었다. 시연에서 VisionAI와 레이더가 같은 사람을 confirmed로 연결하고, 쭈그린 자세에 따른 `vision_risky_posture_raise`가 WARNING을 DANGER로 올렸다. 18:45 조회의 stale CIN과 그 이전 시험의 빈 `tracks`는 시연 전 관찰이다. 시연 중 실행과 부팅 자동 시작은 별도 상태다.
 
-RiskEngine의 production 모듈 여덟 개는 제출 브랜치와 줄바꿈을 정규화해 비교했을 때 일치했다. Pi radar 파일의 로컬 fallback 거리 상수를 제출 브랜치에 반영했다. 운영에서는 `RADAR_LOCAL_DECISION=0`이라 이 로컬 판정은 비활성이고, 알림 writer는 RiskEngine이다. VisionAI의 실행 소스 다섯 파일도 제출 브랜치와 일치했다. Pi 전용 `config.pi.yaml`과 카메라 보정 CSV는 장비별 설정·자료라 제출 브랜치에 섞지 않았다. 주소와 계정은 공개하지 않는다.
+RiskEngine의 production 모듈 여덟 개는 Pi 파일과 줄바꿈을 정규화해 비교했을 때 일치했다. Pi radar 파일의 로컬 fallback 거리 상수도 반영했다. 운영에서는 `RADAR_LOCAL_DECISION=0`이라 이 로컬 판정은 비활성이고, 알림 writer는 RiskEngine이다. VisionAI 실행 소스도 Pi와 대조했으며, `config.pi.yaml`에는 Pi에서 사용한 경고 거리 2.5m와 보조선 설정을 반영했다. 카메라 보정 데이터는 장비마다 새로 만든다. [보정 안내](../vision/README.md#바닥-보정-호모그래피)를 참고한다.
 
 그룹 멤버십은 worker AE를 재등록하면 자동으로 따라오지 않을 수 있다. worker alert CNT의 새 RI를 확인해 group `mid`를 갱신한다. 11월 20일 점검 당시 DHCP 예약은 구성되지 않았다. 2.5 m/1.5 m 임계값과 5초 설정은 팀 시연값이다. Pi의 MEC IPE는 Vision freshness와 `cam_ok` 상태를 MN-CSE에 기록한다. 별도 local mock MEC011 발견·호출 시험은 아래 후속 확인에 기록한다.
 
@@ -43,7 +43,7 @@ RiskEngine의 production 모듈 여덟 개는 제출 브랜치와 줄바꿈을 �
 | MEC registry / data | Pi loopback의 컨테이너가 약 26분 실행. 수동 등록된 `safezone-vision-cin-trial`은 `ACTIVE`; Vision 입력이 없을 때 데이터 상태는 `INACTIVE`. VisionAI를 잠시 켜자 IPE가 실제 `fusedTracks` 최신 데이터를 읽어 `INACTIVE → ACTIVE`로 기록 | 등록 상태와 데이터 freshness는 별개. 컨테이너 접근은 Pi loopback 한정 |
 | MEC011 discovery IPE | 발견 코드가 운영 Pi IPE에 적용됨. 서비스 등록부 조회와 실제 Vision CIN 주소 확인 후 freshness 상태 기록. 별도 로컬 브랜치의 17개 단위 시험 통과 보고 | 자동 Vision 서비스 등록과 다중 서비스 자동 선택은 미구현. 원격 CSE는 실제 장비에서 미검증 |
 
-현재 VisionAI는 중지돼 있어 실시간 융합을 제공하지 않는다. MEC IPE는 수동 등록된 Vision data service를 발견해 실제 oneM2M 최신 데이터를 확인한다. 등록부 `ACTIVE`는 데이터 freshness `ACTIVE`를 뜻하지 않는다. 기본적으로 같은 Pi의 `IPE_MN_BASE`를 사용하며, `IPE_DISCOVERY_CSE_BASE`로 허용 CSE를 바꿀 수 있다. `IPE_MEC_BASE`는 등록부, `IPE_MEC_SERVICE`는 서비스 이름을 지정한다. 이름이 중복되면 임의로 선택하지 않고 허용 CSE 밖의 주소를 쓰지 않는다. 이 discovery 코드는 운영 Pi IPE에 적용됐지만 소스 브랜치 `codex/mec011-live-discovery`는 GitHub에 push되지 않아 배포 코드와 저장소 간 소스 동기화가 남아 있다. 원격 CSE 경유 discovery는 Pi에서 시험하지 않았다. 여러 엣지 장비로 확장할 때 서비스 자동 등록·주소 변경 반영과 위치·부하 등 기준에 따른 적절한 서비스 선택이 다음 단계다.
+확인 당시 VisionAI는 중지돼 있어 실시간 융합을 제공하지 않았다. MEC IPE는 수동 등록된 Vision data service를 발견해 실제 oneM2M 최신 데이터를 확인한다. 등록부 `ACTIVE`는 데이터 freshness `ACTIVE`를 뜻하지 않는다. 발견 코드는 저장소에 포함돼 있으며 Pi에서는 별도 설치 경로와 systemd drop-in으로 실행한다. 발견에는 `IPE_PROBE=mec-cin`, 등록부를 지정하는 `IPE_MEC_BASE`, 서비스 이름을 지정하는 `IPE_MEC_SERVICE`가 필요하다. `IPE_DISCOVERY_CSE_BASE`를 생략하면 `IPE_MN_BASE`의 CSE만 허용한다. 이름이 중복되면 임의로 선택하지 않고 허용 CSE 밖의 주소를 쓰지 않는다. 원격 CSE 경유 discovery는 Pi에서 시험하지 않았다. 여러 엣지 장비로 확장할 때 서비스 자동 등록·주소 변경 반영과 위치·부하 등 기준에 따른 적절한 서비스 선택이 다음 단계다.
 
 운영 복구본은 Pi에 보관돼 있다: `/etc/default/safezone.codex-backup-20261120`, `/etc/systemd/system/safezone-engine.service.codex-backup-20261120`.
 

@@ -70,7 +70,7 @@ The radar uploader waits for each MQTT response and skips a new frame while a re
 
 ### Limitations and next steps
 
-The 2.5 m / 1.5 m thresholds and five-second freshness settings are team-selected demo values, not validated safety limits or tracking guarantees. In the post-demo Pi check, VisionAI was stopped after overheating and the stored `fusedTracks` data was stale; the camera–radar fusion above describes the recorded demo. The MEC011 discovery change is running in the Pi IPE, but its source branch is not yet included in the linked repository. Long-duration operation and restart recovery still need testing. The SG90 stop is demonstrated on a scale model, not a full-size vehicle. Automatic service registration, address updates, and selection across edge devices remain future work.
+The 2.5 m / 1.5 m thresholds and five-second freshness settings are team-selected demo values, not validated safety limits or tracking guarantees. In the post-demo Pi check, VisionAI was stopped after overheating and the stored `fusedTracks` data was stale; the camera–radar fusion above describes the recorded demo. The MEC011 discovery code is included in the repository and runs on the Pi through a separate installation and configuration. It must be explicitly enabled with `IPE_PROBE=mec-cin` and the registry and service settings. Long-duration operation and restart recovery still need testing. The SG90 stop is demonstrated on a scale model, not a full-size vehicle. Automatic service registration, address updates, and selection across edge devices remain future work.
 
 ### Team
 
