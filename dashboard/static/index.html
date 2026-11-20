@@ -135,17 +135,18 @@ function setHealth(key, h) {
   const dot = $('h-' + key), txt = $('h-' + key + '-t');
   if (!h) return;
   dot.className = 'dot ' + (h.ok ? 'ok' : 'bad');
-  txt.textContent = `${key.toUpperCase()}-CSE ${h.ok ? (h.rn || '') + ' · ' + h.ms + 'ms' : '연결 실패 (' + h.detail + ')'}`;
+  const name = key === 'mn' && latest?.config?.mn_health_path ? 'MN 조회 경로' : key === 'in' && latest?.config?.in_health_path ? 'IN 조회 경로' : key.toUpperCase() + '-CSE';
+  txt.textContent = `${name} ${h.ok ? (h.rn || '') + ' · ' + h.ms + 'ms' : '조회 실패 (' + h.detail + ')'}`;
 }
 
 // IPE가 MN-CSE에 기록한 VisionAI 서비스 상태 → 'Vision 중단' 표시
 function visionStatus(s) {
   const src = s.sources.vision_status || {}, con = src.con;
-  if (src.state !== 'ok' || !con || typeof con !== 'object') return { cls: 'v-unknown', dot: '', text: 'Vision 상태 없음 (IPE 미실행)' };
-  const age = typeof con.ts === 'number' ? s.now - con.ts : null;
-  if (age === null || age > s.config.vision_status_stale_s) return { cls: 'v-unknown', dot: '', text: `Vision 상태 알 수 없음 (IPE 응답 ${age === null ? '없음' : ago(age)})` };
+  if (src.state !== 'ok' || !con || typeof con !== 'object') return { cls: 'v-unknown', dot: '', text: 'Vision 상태 조회 불가' };
+  if (src.freshness !== 'fresh') return { cls: 'v-unknown', dot: '', text: 'Vision 상태 시각이 오래됐거나 유효하지 않음' };
   if (con.state === 'INACTIVE') return { cls: 'v-down', dot: 'bad', text: `Vision 중단 · 레이더 단독 판단 (${esc(con.reason || '')}, ${ago(s.now - (con.since ?? s.now))}부터)` };
-  return { cls: 'v-ok', dot: 'ok', text: 'Vision 정상 · 카메라·레이더 결합 판단' };
+  if (con.state === 'ACTIVE') return { cls: 'v-ok', dot: 'ok', text: 'Vision 상태 ACTIVE (IPE 기록)' };
+  return { cls: 'v-unknown', dot: '', text: 'Vision 상태 알 수 없음' };
 }
 
 function renderState(s) {
@@ -160,23 +161,25 @@ function renderState(s) {
 
   const ev = s.sources.events?.con;
   const decision = (ev && typeof ev === 'object') ? ev : null;
-  let status = decision ? String(decision.status || 'UNKNOWN').toUpperCase() : 'UNKNOWN';
+  const radarUsable = s.sources.radar?.freshness === 'fresh';
+  const eventUsable = s.sources.events?.state === 'ok';
+  let status = decision && radarUsable && eventUsable ? String(decision.status || 'UNKNOWN').toUpperCase() : 'UNKNOWN';
   if (!COLORS[status]) status = 'UNKNOWN';
   if (decision?.parameters) params = decision.parameters;
   $('status').textContent = status; $('status').className = status;
   $('banner').className = 'panel b-' + status;
-  $('reason').textContent = decision ? (decision.reason || '') : '위험 판단 이벤트가 아직 없음';
-  $('decided').textContent = decision ? `판정 기록 ${ago(s.sources.events.age_s)} (상태가 바뀔 때만 기록됨)` : '';
-  $('m-dist').textContent = fmt(decision?.distance_m, 'm');
-  $('m-tcpa').textContent = fmt(decision?.t_cpa_s, 's', 1);
-  $('m-dcpa').textContent = fmt(decision?.d_cpa_m, 'm');
-  const radar = s.sources.radar?.con;
+  $('reason').textContent = !radarUsable ? '레이더 데이터가 오래됐거나 조회할 수 없어 현재 판정을 표시하지 않음' : !eventUsable ? '위험 판단 조회 불가' : decision ? (decision.reason || '') : '위험 판단 이벤트가 아직 없음';
+  $('decided').textContent = decision ? `판정 기록 ${s.sources.events.created_age_s == null ? '생성 시각 확인 불가' : ago(Math.max(0, s.sources.events.created_age_s))} (상태가 바뀔 때만 기록됨; 엔진 가동 여부는 별도 확인)` : '';
+  $('m-dist').textContent = fmt(radarUsable && eventUsable ? decision?.distance_m : null, 'm');
+  $('m-tcpa').textContent = fmt(radarUsable && eventUsable ? decision?.t_cpa_s : null, 's', 1);
+  $('m-dcpa').textContent = fmt(radarUsable && eventUsable ? decision?.d_cpa_m : null, 'm');
+  const radar = radarUsable ? s.sources.radar?.con : null;
   $('m-tgt').textContent = Array.isArray(radar?.targets) ? radar.targets.length : '-';
   $('lg-d').textContent = params.danger_distance_m + ' m'; $('lg-w').textContent = params.warning_distance_m + ' m';
 
-  const ra = s.sources.radar?.age_s;
-  $('radar-age').textContent = ra == null ? '· 레이더 데이터 없음' : (ra > 2 ? `· 레이더 ${ago(ra)} 이후 끊김` : `· 레이더 ${ago(ra)}`);
-  $('radar-age').className = ra == null || ra > 2 ? 'warnline' : 'muted';
+  const ra = s.sources.radar?.data_age_s;
+  $('radar-age').textContent = radarUsable ? `· 레이더 원본 ${ago(Math.max(0, ra))}` : '· 레이더 원본 오래됨·시각 오류·조회 불가';
+  $('radar-age').className = radarUsable ? 'muted' : 'warnline';
 
   const inMode = s.history?.mode === 'IN';
   const freshTxt = s.history?.fresh ? ` · ${new Date(s.history.since * 1000).toLocaleTimeString('ko-KR', { hour12: false })} 이후만` : '';
@@ -185,9 +188,10 @@ function renderState(s) {
   $('sources').innerHTML = keys.map(k => {
     const src = s.sources[k] || {}; const st = src.state || 'init';
     const path = k === 'in_events' ? 'IN ' + s.config.in_events_path + '/la' : s.config[k + '_path'];
-    const cls = st === 'ok' ? 'SAFE' : st === 'empty' ? 'muted' : st === 'init' ? 'muted' : 'DANGER';
-    const label = st === 'ok' ? '수신' : st === 'empty' ? '데이터 없음' : st === 'init' ? '대기' : st.replace('error:', '오류 ');
-    return `<tr><td>${SRC_LABEL[k]}</td><td class="muted">${esc(path)}</td><td class="${cls}">${esc(label)}</td><td>${ago(src.age_s)}</td></tr>`;
+    const freshness = src.freshness;
+    const cls = st === 'ok' && (!freshness || freshness === 'fresh') ? 'SAFE' : st === 'empty' || st === 'init' ? 'muted' : 'DANGER';
+    const label = st === 'ok' ? (freshness && freshness !== 'fresh' ? '오래됨 또는 시각 오류' : '수신') : st === 'empty' ? '데이터 없음' : st === 'init' ? '대기' : st.replace('error:', '오류 ');
+    return `<tr><td>${SRC_LABEL[k]}</td><td class="muted">${esc(path)}</td><td class="${cls}">${esc(label)}</td><td>${ago(freshness ? src.data_age_s : src.created_age_s)}</td></tr>`;
   }).join('');
   drawMap();
 }
@@ -219,7 +223,7 @@ function drawMap() {
   g.fillStyle = '#c9d1dc'; g.fillRect(ox - 18, oy, 36, 16); g.fillStyle = '#0f1216'; g.font = '10px system-ui'; g.fillText('지게차', ox - 15, oy + 12);
   if (!latest) return;
   // Vision 추적 (m 단위)
-  const fused = latest.sources.fused?.con;
+  const fused = latest.sources.fused?.freshness === 'fresh' ? latest.sources.fused?.con : null;
   if (fused && Array.isArray(fused.tracks)) for (const t of fused.tracks) {
     if (typeof t.x !== 'number' || typeof t.y !== 'number') continue;
     const [x, y] = P(t.x, t.y); g.strokeStyle = t.state === 'ghost_suspect' ? '#6b7480' : '#c9d1dc'; g.lineWidth = 2;
@@ -228,7 +232,7 @@ function drawMap() {
   }
   // 레이더 표적 (mm 단위)
   const radar = latest.sources.radar?.con;
-  const stale = (latest.sources.radar?.age_s ?? 99) > 2;
+  const stale = latest.sources.radar?.freshness !== 'fresh';
   if (radar && Array.isArray(radar.targets)) radar.targets.forEach((t, i) => {
     if (typeof t.x !== 'number' || typeof t.y !== 'number') return;
     const xm = t.x / 1000, ym = t.y / 1000, d = Math.hypot(xm, ym);

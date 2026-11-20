@@ -41,6 +41,27 @@ python3 -m dashboard.server --port 8080
 
 Pi에서 bridge를 실행할 때도 `BRIDGE_IN_BASE=http://<NOTEBOOK_IP>:3000/TinyIoT`로 설정한다. MN의 Mcc 등록은 별도 CSE 연결 관계이고, event history는 bridge의 HTTP/Mca create 경로로 이동한다.
 
+### IN을 통한 MN 원격 조회 시험 (2026-11-21)
+
+기존 대시보드는 `DASH_CSE_BASE`에 IN의 원격 CSE 경로를 넣어 현재 상태를 IN을 통해 조회할 수 있다. 다음은 시험한 주소 형식이며 Pi와 노트북 주소, CSE ID 및 접근 권한은 실제 환경에 맞춰 확인해야 한다.
+
+```bash
+DASH_CSE_BASE=http://<IN_IP>:3000/~/tinyiot-mn/TinyIoT-MN \
+python3 -m dashboard.server --port 8080
+```
+
+요청은 대시보드 → IN의 Mca/HTTP, IN → MN의 Mcc로 전달된다. Pi MN에 별도 시험 AE와 조회 전용 ACP를 만들고 모의 radar, fusedTracks, alert, Vision 상태, events CIN을 생성한 뒤, 기존 대시보드의 `/api/state`가 다섯 값을 모두 IN 경유로 읽는 것을 확인했다. 권한이 없는 원격 식별자는 403/RSC 4103으로 거부됐다. 시험 리소스는 삭제했다.
+
+**운영 권한 적용(2026-11-21):** 노트북 IN에 관제 AE `Cdashboard`를 만들고, MN의 radar·fusedTracks·events·forklift alert·Vision 상태 및 IN 이력 CNT에 조회 권한을 연결했다. IN이 원격 origin을 `/id-in/Cdashboard`로 전달하며, 다섯 MN CIN과 IN 이력 최신 CIN 조회를 확인했다. 기존 작성자 조회도 확인했지만 실제 새 CIN 작성과 ESP 동작은 이 시험에서 확인하지 않았다. 운영 적용 기록과 복구 방법은 [ACP 적용안](../docs/dashboard-in-acp-plan.md)을 참고한다.
+
+관제 AE에 CSEBase 조회 권한을 별도로 주지 않는 경우 `DASH_MN_HEALTH_PATH=/AE-forklift01/radar/la`를 설정하면 대시보드는 해당 조회 경로의 응답을 확인한다. 화면에는 `MN 조회 경로`라고 표시한다. 이것은 CSEBase 전체 상태를 진단한 결과가 아니다.
+
+위 예제는 `DASH_IN_BASE`를 설정하지 않으므로 이력은 대시보드 로컬 모드다. IN 이력을 사용하려면 `DASH_IN_BASE=http://<IN_IP>:3000/TinyIoT`, `DASH_ORIGIN=Cdashboard`, `DASH_MN_HEALTH_PATH=/AE-forklift01/radar/la`, `DASH_IN_BACKFILL=0`, `DASH_IN_HEALTH_PATH=/AE-safezone/events/la`를 추가할 수 있다. 이때 시작 시 과거 이력 전체 조회는 건너뛰고 최신 이력부터 읽는다. `DASH_IN_BACKFILL=1`은 시작 시 `rcn=4` 조회를 수행하므로 현재 IN의 빌드와 데이터에서 별도 검증 전 사용하지 않는다.
+
+이 변경에서는 radar·fusedTracks·IPE 상태의 `con.ts`를 원본 시각으로 사용한다. 지정한 허용 나이를 넘거나 시각이 없고 잘못됐거나 미래로 크게 치우치면 신선하지 않은 것으로 표시한다. 조회가 실패해도 이전 값을 정상으로 취급하지 않는다. 레이더가 신선하지 않거나 events 조회가 실패하면 화면의 현재 판정은 UNKNOWN으로 표시한다. 이 UNKNOWN은 **대시보드 표시 상태**이며 엔진이 새 UNKNOWN 이벤트를 기록했다는 뜻은 아니다.
+
+events와 alert는 상태가 바뀔 때만 기록될 수 있으므로 오래된 생성 시각만으로 장애라고 단정하지 않고 CIN 생성 시각을 보여 준다. 엔진 자체의 생존 여부는 별도로 확인해야 한다. `DASH_RADAR_STALE_S` 기본 5초, `DASH_FUSED_STALE_S` 기본 3초, `DASH_FUTURE_SKEW_S` 기본 1초는 대시보드 표시 기준이며 실제 시연 환경에 맞춰 검증해야 한다. Pi와 노트북의 시각 동기화도 필요하다.
+
 ### 장비 없이 화면 확인
 
 가짜 CSE가 사람이 다가왔다 멀어지는 상황을 30초 주기로 흉내 낸다.
