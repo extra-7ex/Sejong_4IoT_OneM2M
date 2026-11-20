@@ -1,5 +1,46 @@
 # SafeZone 아키텍처와 통합 상태
 
+## 2026-11-20 실제 Pi 배치 확인
+
+이 절은 앞선 목표와 2026-11-17 시험 기록에 덧붙이는 현재 배치 스냅샷이다. 2026-11-20 Pi에서 SSH, systemd, 개별 oneM2M HTTP GET, 대시보드 상태와 서비스 로그를 읽어 확인했다. 주소와 계정은 공개하지 않는다. 이 확인은 장기 가용성, 재부팅 후 복구, 안전 성능 또는 ESP의 물리 출력 검증을 뜻하지 않는다. 자세한 절차와 제한은 [배포 및 운영 기록](deployment.md)을 참고한다.
+
+```mermaid
+flowchart LR
+  LD["LD2450"] -->|"UART"| UP["Pi 레이더 업로더"]
+  UP -->|"oneM2M MQTT 요청·응답"| MN["Pi tinyIoT MN-CSE"]
+  MN --> RAD["AE-forklift01/radar CNT"]
+  RAD -->|"HTTP GET /la · polling"| RE["Pi RiskEngine<br/>별도 설치본"]
+  RE -->|"HTTP CIN 생성 요청"| EV["AE-riskengine/events CNT"]
+  RE -.->|"설정된 HTTP GET"| FUSED["AE-VisionAI/fusedTracks CNT<br/>오래된 CIN · cam_ok=false"]
+  RE -->|"HTTP group fan-out 설정"| GRP["grp-safezone-alarms/fopt"]
+  GRP --> FA["forklift alert CNT / SUB"]
+  GRP --> WA["worker alert CNT / SUB"]
+  GRP --> ZA["zone alert CNT"]
+  FA -.->|"SUB HTTP /notify"| E1["Forklift ESP<br/>전원 꺼짐 · 미검증"]
+  WA -.->|"SUB → Cworker01 poa"| E2["Worker ESP<br/>전원 꺼짐 · 미검증"]
+  EV -->|"HTTP polling · 요약 CIN"| BR["Pi MN→IN 브리지"]
+  BR -->|"HTTP"| IN["노트북 Docker IN-CSE"]
+  MN --> DASH["Pi 대시보드"]
+  IN --> DASH
+  MN --> IPE["Pi Vision 상태 확인 IPE"]
+  IPE -->|"HTTP GET CIN / POST 상태"| MN
+  VISION["Vision 서비스<br/>현재 중지"] -.-> FUSED
+```
+
+실선은 프로세스 실행 또는 요청·기록·화면 조회를 관찰한 경로다. 점선은 설정된 입력/구독 경로로, Vision 추론이나 ESP의 실제 수신·출력을 증명하지 않는다. 브리지는 별도 HTTP 애플리케이션이며 MN에서 IN으로 직접 복제하는 CSE 간 Mcc 연동으로 확인되지 않았다. Pi에도 IN-CSE 서비스가 있지만, 현 시점 브리지와 대시보드는 노트북 Docker IN-CSE 주소를 사용한다.
+
+| 구성 | 관찰 결과 | 확인 범위와 한계 |
+|---|---|---|
+| Pi 서비스 | tinyIoT MN-CSE, 레이더 업로더, RiskEngine, MN→IN 브리지, 대시보드, MEC 상태 확인 IPE 실행 중 | SSH와 systemd 상태 |
+| radar CIN | `AE-forklift01/radar/la` 최신 CIN을 읽음. 업로더 로그에서 MQTT 응답 약 0.26–0.28초, 발행 간격 약 0.53초 관찰 | 짧은 시간의 로그 관찰이며 지연 보장은 아님 |
+| 위험 이벤트 | HTTP CIN 응답 HTTP 201 / RSC 2001 로그 확인 | DANGER·UNKNOWN 상태 기록 관찰; 안전 성능 확인 아님 |
+| 경보 구성 | 경보 그룹, forklift·worker·zone CNT, forklift HTTP SUB와 worker AE 대상 SUB 확인 | ESP 두 대가 꺼져 있어 전달·부저·서보 동작 미확인 |
+| IN·대시보드 | 브리지의 IN 요약 기록과 대시보드의 MN/IN 연결, radar·alert·event 상태 확인 | 확인 시점의 연결이며 재부팅 복구 보장 아님 |
+| Vision | 서비스 중지, 카메라 없음, 최신 fusedTracks 오래됨 및 `cam_ok=false` | 실시간 Vision 추론·입력 미작동 |
+| 엔진 타이밍 | stale 입력 5초, 표적 연결 간격 5초 | 시연용 임시 설정; 최적값·안전성·추적 정확도 검증 아님 |
+
+위 기록은 아래의 11월 17일 격리 시험과 분리한다. 격리 시험은 모의 입력과 시험 CNT를 사용했으며 운영 장치 동작을 증명하지 않는다.
+
 ## 문서 범위
 
 팀 공유 정보, GitHub 코드와 별도 시험 결과를 정리한다. 목표 구성, 관제 경로와 아래 통합 기록을 2026-11-17에 다시 대조했다. **현재 프로토타입**, **코드·모의 시험**, **미검증 목표**는 서로 다르다. 각 시험의 서버·DB와 데이터 출처를 확인하고, 단일 시험 결과로 실제 장비 전체 연동이나 산업안전 성능을 주장하지 않는다.

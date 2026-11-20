@@ -67,6 +67,8 @@ def normalize_radar_cin(message: Any) -> RadarFrame:
     raw_ts = con.get("ts")
     sensor_ts = None
     if raw_ts is not None:
+        if isinstance(raw_ts, bool):
+            raise InputError("con.ts must be Unix seconds")
         try:
             sensor_ts = float(raw_ts)
         except (TypeError, ValueError) as exc:
@@ -293,7 +295,7 @@ class RiskEngine:
                 "coordinate_frame": "radar_fixed_2d_mm",
                 "radar_heading_constant": True,
                 "velocity_source": "finite_difference_of_same_slot_xy_using_server_monotonic_receive_time",
-                "sensor_ts_usage": "metadata_only_never_mixed_with_receive_time",
+                "sensor_ts_usage": "application_checks_wall_clock_freshness_velocity_uses_monotonic",
                 "cpa_meaning": "closest_approach_time_and_distance_under_constant_relative_velocity",
                 "risk_radius_m_is_hypothesis": True,
             },

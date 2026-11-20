@@ -1,4 +1,18 @@
 # SafeZone 위험판단 엔진 MVP
+
+## 레이더 입력 시각 검사
+
+모든 레이더 CIN은 `con.ts`에 Unix 초를 포함해야 한다. 레이더 업로더와 엔진의
+시계가 동기화돼 있어야 한다. 프레임이 `RISK_RADAR_MAX_AGE_S`(기본 3초)보다
+오래됐거나 `RISK_RADAR_FUTURE_SKEW_S`(기본 1초)를 넘겨 미래에 있으면 해당
+프레임을 처리하지 않고 `UNKNOWN`으로 기록한다. 유효한 빈 `targets: []`는
+정상 프레임이다. 시계가 틀리거나 3초 이상 지연되면 정상 센서도 UNKNOWN이
+될 수 있으므로 실제 네트워크 지연을 측정해 한계를 설정한다.
+
+입력 시각 검사만으로 CSE 또는 네트워크 단절 시 ESP 정지가 보장되지는 않는다.
+UNKNOWN 전송·각 장치 수신, 재접속 시 상태 동기화 및 장치 독립 감시는 별도
+검증이 필요하다. 시험에서는 작업자 UNKNOWN 무음, 지게차 UNKNOWN 정지가 목표다.
+
 ## MQTT 알림 입출력 — Pi 격리 시험 확인
 
 ### Vision 조언과 작업자 alert 시험
@@ -100,7 +114,7 @@ AE-riskengine/events에 이벤트 CIN 등록
 | 레이더 최신 CIN은 `AE-forklift01/radar/la`에서 GET 가능 | 기본 경로에서 polling | `ONEM2M_RADAR_PATH` |
 | oneM2M CIN에는 `ri`가 있음 | polling 중복 제거 및 notification 중복 전달 방지에 사용. 없으면 입력 오류 처리 | `RiskApplication.accept_message()` |
 | CIN `con`은 객체 또는 JSON 문자열이고 `targets` 배열을 포함 | 두 형식을 모두 허용. 표적의 `x`,`y`는 mm, `v`는 선택적인 cm/s 원시값 | `normalize_radar_cin()` |
-| 센서 `ts`는 Unix 초 | `sensor_ts_unix_s`에 보존만 하고 속도·신선도 계산에는 쓰지 않음 | `normalize_radar_cin()` |
+| 센서 `ts`는 Unix 초 | 엔진 입력 단계에서 현재 시각과 비교해 오래되거나 미래인 프레임을 UNKNOWN으로 처리한다. 속도 계산은 monotonic 수신 시각을 쓴다. | `RiskApplication.accept_message()` |
 | Pi 수신 시각은 처리 서버의 시계 | 속도 추정·stale·표적 소실 시간에 monotonic 수신 시각을 사용. 별도로 서버 수신 Unix 시각/UTC도 기록 | `RiskEngine.process_frame()` |
 | 같은 표적을 연속 프레임에서 슬롯/배열 위치로 연결 가능 | `slot`, 없으면 `id`, 그것도 없으면 배열 순번을 임시 키로 사용. 영구적인 사람 ID로 보지 않음 | `normalize_radar_cin()`, 표적 jump gate |
 | LD2450의 `v`만으로 2D 이동 방향을 알 수 없음 | `v`는 기록용. `vx`,`vy`는 같은 키의 연속 `x`,`y`와 서버 monotonic `dt`로 계산 | `RiskEngine._evaluate_target()` |
@@ -142,6 +156,8 @@ python -m engine.main --transport notification --listen 0.0.0.0 --port 8081
 | `RISK_MIN_SPEED_MPS` | `0.05` | 이보다 느리면 CPA 무효 |
 | `RISK_MAX_SAMPLE_INTERVAL_S` | `0.75` | 이보다 긴 수신 간격이면 속도·CPA 무효 |
 | `RISK_STALE_AFTER_S` | `1.0` | 새 CIN 부재 시 UNKNOWN 전환 시간 |
+| `RISK_RADAR_MAX_AGE_S` | `3.0` | 센서 시각이 이 시간보다 오래되면 UNKNOWN |
+| `RISK_RADAR_FUTURE_SKEW_S` | `1.0` | 센서 시각이 현재보다 이 시간 넘게 앞서면 UNKNOWN |
 | `RISK_TARGET_LOSS_GRACE_S` | `1.0` | 표적 소실 유예 시간 |
 | `RISK_MAX_TARGET_JUMP_M` | `2.5` | 같은 표적의 비현실적 위치 점프 제한 |
 

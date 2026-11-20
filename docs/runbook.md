@@ -2,6 +2,7 @@
 
 tinyIoT MN-CSE(Pi)와 IN-CSE 기동·점검·장애 대응 절차. 주소는 `<...>` 자리표시자로 적는다.
 CSE 이름 전환은 [CSE 명명안](cse-naming.md), MQTT 규격은 [onem2m/mqtt.md](../onem2m/mqtt.md)를 따른다.
+2026-11-20 Pi에서 확인한 전체 배치와 재현 한계는 [배포 및 운영 기록](deployment.md), 실제 요청 흐름은 [아키텍처](architecture.md)를 참고한다.
 
 ## 1. 구성
 
