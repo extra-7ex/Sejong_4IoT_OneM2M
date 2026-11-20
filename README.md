@@ -3,7 +3,7 @@
 **레이더와 VisionAI로 작업자 근접 위험을 판단하고 현장 경보와 관제를 연결하는 엣지 시스템**
 oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
-언어: 한국어 · [English](README.en.md)
+▶️ **[SafeZone 실장비 시연 영상 보기](https://www.youtube.com/watch?v=yl5t3CzdHbM)**
 
 > 최종 수정: 2026-11-20
 
