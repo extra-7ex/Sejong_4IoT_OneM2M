@@ -1,8 +1,31 @@
 # SafeZone 배포 및 운영 기록
 
-## 이 기록의 기준
+## 2026-11-20 후속 실장비 확인 (18:45 KST)
 
-2026-11-20 Raspberry Pi에서 SSH, systemd 설정, 서비스 로그와 oneM2M 리소스를 읽어 현재 배치를 확인했다. Pi의 애플리케이션 저장소는 `430c8c7178e9668ac742e30a5295cb6169255b8f`이고 레이더 업로더에 로컬 변경이 있다. 엔진은 저장소 checkout이 아니라 `/opt/safezone/engine-freshness-20261119`에서 실행한다. 따라서 저장소 `main` 또는 Pi의 애플리케이션 HEAD만으로 운영 코드를 재현할 수 없다.
+이 절은 장비 재연결 뒤 확인한 최신 상태다. Pi의 프로세스, systemd 설정, oneM2M 리소스, ACP, RiskEngine 로그는 읽기 전용 조회로 확인했다. ESP의 물리 동작과 카메라 시험 결과는 작업자가 수행해 알려 준 내용을 반영한다. 바로 아래의 이전 점검 표에 기록된 “ESP 전원 꺼짐”과 “Vision 중지”는 재연결 전 관찰이다.
+
+| 구성 | 최신 확인 |
+|---|---|
+| 실행 중 | `tinyiot-mn`, `tinyiot-in-local`, `mosquitto`, `safezone-radar`, `safezone-engine`, `safezone-bridge`, `safezone-dashboard`, `safezone-ipe` |
+| Radar → MN | LD2450 입력을 저장소의 `radar/radar_node.py`가 MQTT CIN 요청으로 기록. 현재 `RADAR_LOCAL_DECISION=0`, 따라서 alert writer는 RiskEngine으로 분리됨 |
+| RiskEngine | `/opt/safezone/engine-freshness-20261119`; `--transport polling`, `--vision-path /AE-VisionAI/fusedTracks/la`, `--alert-path /grp-safezone-alarms/fopt`. radar와 Vision latest CIN을 HTTP GET으로 읽고 events·alert를 HTTP로 씀 |
+| 경보 그룹 | `grp-safezone-alarms`의 `mid`에 forklift·worker·zone alert CNT의 현재 RI 세 개가 있음. worker AE 재등록 후 새 worker alert RI가 그룹에 다시 포함됨 |
+| 경보 기록 | 세 alert CNT 모두 최신 `level=danger` 기록. 작업자는 worker ESP가 위험 모드로 바뀐 것을 확인했고, 두 ESP 보드 동작도 확인함 |
+| SUB | Forklift SUB는 HTTP `/notify` 주소를 직접 보유. Worker SUB는 `nu=Cworker01`이며 AE-worker01의 `poa`로 해석됨. 이번 확인에서 worker 위험 모드 경로 성공 |
+| ACP | radar/fusedTracks 조회와 alert 작성용 ACP 확인. Worker ACP의 `CAdmin` 권한 마스크는 35(create/retrieve/discovery)로 설정돼 있어 최소 권한 검토는 별도 필요 |
+| Vision | 작업자 확인: C270을 Pi가 인식했고 `/home/user/vision4iot` 환경에서 새 `fusedTracks` CIN 생성. 당시 `cam_ok=true`, `tracks=[]`; RiskEngine이 이 시험 구간의 Vision 데이터를 fresh로 읽음 |
+| Vision 후속 상태 | 읽기 전용 조회 시 `safezone-vision.service`는 비활성·비활성화 상태였고, 최신 CIN은 약 13분 전. 엔진은 18:29 KST에 `vision=fresh`를 기록했으나 뒤의 조회에서는 stale이었다 |
+| 최신 DANGER 원인 | 18:44 KST 엔진 기록은 radar 기반 `predicted_cpa_inside_radius_within_danger_time`; 그 시점 Vision은 stale. 해당 DANGER를 카메라 인식 결과가 유발했다고 주장하지 않음 |
+| IN·대시보드 | 브리지는 Pi MN의 events를 HTTP polling해 노트북 Docker IN에 쓰며, 대시보드는 MN live 상태와 IN 이력을 표시. Pi 자체 IN도 실행 중이나 현재 브리지·대시보드 대상은 노트북 IN |
+| 타이밍 | `RISK_WARNING_DISTANCE_M=2.5`, `RISK_DANGER_DISTANCE_M=1.5`, `RISK_STALE_AFTER_S=5`, `RISK_MAX_SAMPLE_INTERVAL_S=5` |
+
+RiskEngine의 production 모듈 여덟 개는 제출 브랜치와 줄바꿈을 정규화해 비교했을 때 일치했다. Pi radar 파일의 로컬 fallback 거리 상수를 제출 브랜치에 반영했다. 운영에서는 `RADAR_LOCAL_DECISION=0`이라 이 로컬 판정은 비활성이고, 알림 writer는 RiskEngine이다. VisionAI의 실행 소스 다섯 파일도 제출 브랜치와 일치했다. Pi 전용 `config.pi.yaml`과 카메라 보정 CSV는 장비별 설정·자료라 제출 브랜치에 섞지 않았다. 주소와 계정은 공개하지 않는다.
+
+그룹 멤버십은 worker AE를 재등록하면 자동으로 따라오지 않을 수 있다. worker alert CNT의 새 RI를 확인해 group `mid`를 갱신하고, 각 alert CNT 기록과 ESP 수신을 따로 확인한다. DHCP 예약은 아직 구성하지 않았다. 2.5 m/1.5 m 임계값과 5초 설정은 팀의 시연용 값이며 안전 한계나 추적 정확도를 뜻하지 않는다. MEC 관련해서는 Pi의 IPE가 서비스 상태를 oneM2M 리소스로 드러내는 점을 확인했다. 별도 MEC 플랫폼에서 추론을 실행하거나 지연 개선을 측정한 것은 아니다.
+
+## 이전 배포 스냅샷의 기준
+
+아래의 첫 점검 기록은 2026-11-20 장비 재연결 전 상태를 보존한다. Pi의 애플리케이션 저장소는 `430c8c7178e9668ac742e30a5295cb6169255b8f`이고 레이더 업로더에 로컬 변경이 있다. 엔진은 저장소 checkout이 아니라 `/opt/safezone/engine-freshness-20261119`에서 실행한다. 따라서 저장소 `main` 또는 Pi의 애플리케이션 HEAD만으로 운영 코드를 재현할 수 없다.
 
 GitHub `main`은 이 기록을 시작할 때 `f31e63c385524f01b5f51feb186eb1f34f87d8fa`였다. Pi 운영 엔진과 해당 코드의 파일별 차이를 이번 제출 브랜치의 `engine/`에 반영했다. 실행 설정과 실험용 5초 시연값은 코드 기본값과 별도다.
 
@@ -52,12 +75,12 @@ Pi 운영본에는 radar CIN의 `con.ts`가 Unix 시각인지, 허용 시간 범
 4. 브리지의 `BRIDGE_IN_BASE`와 대시보드의 `DASH_IN_BASE`를 동일한 현재 노트북 IN 주소로 설정한다. `/etc/systemd/system/<service>.service.d/`의 기존 설정을 확인한 뒤 필요한 환경 변수를 수정하고 `systemctl daemon-reload` 후 해당 서비스를 다시 시작한다. 주소를 코드나 문서에 커밋하지 않는다.
 5. 레이더 입력이 올라오는지 `AE-forklift01/radar/la`에서 확인하고 `con.ts`, `targets`, 좌표 단위를 점검한다. 엔진은 polling 기반으로 실행하며 Vision 입력을 지정할 때 해당 CNT의 최신 생성과 `cam_ok`를 별도로 확인한다.
 6. 실제 `events` CIN과 응답 `HTTP 201 / RSC 2001`을 확인한다. 이어 브리지 로그와 IN의 `AE-safezone/events/la`를 확인하고, 대시보드에서 MN·IN 연결 및 같은 최신 상태가 보이는지 확인한다. 각 단계는 독립적으로 확인한다.
-7. 경보 시험 전에 한 리소스의 작성 주체가 하나인지 확인한다. 경보 그룹과 각 CNT/SUB, 각 단말의 주소·전원을 확인하고 실제 알림 수신과 부저·서보를 관찰한다. 현재 대상 보드가 꺼져 있었으므로 이 단계는 아직 완료되지 않았다.
-8. Vision을 쓰려면 Pi가 카메라를 실제로 인식하고 `safezone-vision`이 실행되며, 신선한 `cam_ok=true` CIN을 내고 IPE가 ACTIVE를 기록하는지 확인한다. 이 기록일에는 카메라 인식 실패와 Vision INACTIVE를 확인했으므로 Vision이 통합되어 실행된 것으로 소개하지 않는다.
+7. 경보 시험 전에 한 리소스의 작성 주체가 하나인지 확인한다. worker AE 재등록 뒤 현재 worker alert RI가 경보 그룹 `mid`에 연결되어 있는지 확인한다. 이번 후속 확인에서는 세 alert CNT에 DANGER가 기록되고 worker ESP가 위험 모드로 진입했다. 부저·서보·모터 정지와 재부팅 후 그룹 복구는 별도 확인 항목이다.
+8. Vision을 쓸 때는 C270 인식, 새 `cam_ok=true` CIN, RiskEngine의 fresh 판정, IPE 상태를 함께 확인한다. 후속 시험에서 이 데이터 경로는 동작했지만 그때 `tracks`는 비어 있었다. 이후 관찰에서는 Vision 프로세스가 중지되고 최신 출력이 stale로 바뀌었다. 이번 시험으로 사람 검출 성능이나 지속 실행을 주장하지 않는다.
 9. 각 시험의 시간을 기록하고, 노트북 Docker·Pi MN·엔진·브리지·화면을 다시 시작해 복구를 별도 확인한다. 해당 재부팅 후 종단 간 재검증은 완료되지 않았다.
 
 주소나 계정 비밀은 저장소 또는 게시용 글에 넣지 않는다. 설치 스크립트의 기본값만으로 운영 Pi의 임시 설정과 전체 배치가 재현된다고 보장하지 않는다.
 
 ## 제출 시 기술 범위
 
-확인된 시연 범위는 Pi의 MQTT 레이더 CIN 수집, HTTP polling 기반 위험 이벤트 생성, 경보 그룹의 oneM2M 리소스 구성, 이벤트 브리지의 IN 기록, 대시보드에서 MN·IN 연결 및 이력 조회, 그리고 Vision 최신 입력을 보는 상태 확인 IPE다. 실제 카메라 영상 처리와 Vision 새 출력, ESP의 알림 및 물리 출력, 부저·서보, DHCP 주소 예약, 재부팅 복구, fail-safe와 산업안전 검증은 확인된 기능으로 쓰지 않는다.
+확인된 범위는 Pi의 MQTT radar CIN 수집, HTTP polling RiskEngine, Vision의 fresh `fusedTracks` 입력 경로, oneM2M event·alert CIN 기록, 경보 그룹 fan-out, worker ESP의 DANGER 위험 모드 진입, MN→IN HTTP 브리지, MN·IN 대시보드 조회, MEC 상태 IPE다. Vision 시험 때 사람 `tracks`는 비어 있었고 이후 출력은 stale로 바뀌었다. 자동 지게차 정지, 부저·서보의 모든 조합, DHCP 예약, 재부팅 복구, 최악 지연, 장기 신뢰성, fail-safe 및 산업안전 검증은 주장하지 않는다.

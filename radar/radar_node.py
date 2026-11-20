@@ -30,8 +30,8 @@ LOCAL_DECISION = os.getenv('RADAR_LOCAL_DECISION', '1') != '0'
 # alert를 쓸 곳. 경보 장치 그룹(onem2m/alarm_group.py)을 만들었으면 grp-safezone-alarms/fopt로 바꾸면
 # MN이 지게차·작업자·구역 경보 컨테이너에 같은 alert를 한 번에 만든다(fan-out)
 ALERT_PATH = os.getenv('RADAR_ALERT_PATH', 'AE-forklift01/alert').strip('/')
-WARN_MM = 1000           # 로컬 판단 기본값. 운영은 RADAR_LOCAL_DECISION=0이며 엔진 설정을 사용
-DANGER_MM = 500          # 로컬 판단 기본값. 시연 거리 설정은 docs/deployment.md 참고
+WARN_MM = 3000           # Pi 파일과 동기화한 로컬 fallback. 운영은 RADAR_LOCAL_DECISION=0
+DANGER_MM = 1500         # Pi 파일과 동기화한 로컬 fallback. 운영 알림은 RiskEngine이 판정
 RANK = {'safe': 0, 'warn': 1, 'danger': 2}
 OFF_DELAY = 1.5          # 이 시간(초) 동안 계속 범위 밖이어야 해제
 STALE_S = float(os.getenv('RADAR_STALE_S', '2.0'))  # 이 시간(초) 동안 정상 프레임이 없으면 alert unknown(지게차 정지)
