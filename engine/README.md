@@ -1,3 +1,7 @@
+# 2026-11-20 Pi 운용 기록
+
+실제 Pi는 별도 엔진 실행 경로에서 HTTP polling과 HTTP 출력을 사용한다. Origin, 시연용 5초 설정, 거리 기준 및 ACP 확인 결과는 [Pi 운영 상태](../docs/pi-operating-state.md)를 참고한다. 아래 과거 시험 설명과 현재 Pi 구성을 구분한다.
+
 # SafeZone 위험판단 엔진 MVP
 
 ## Pi 시연 배포 프로필 (2026-11-20)

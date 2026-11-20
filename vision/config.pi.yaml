@@ -10,6 +10,9 @@ model:
   path: "yolo11n-pose_ncnn_model"   # Pi에서 export: yolo export model=yolo11n-pose.pt format=ncnn imgsz=320
   imgsz: 320
 
+thresholds:
+  caution_dist_m: 2.5       # Pi 시연 설정
+
 fusion:
   # C270 대각 55° → 가로 약 45~49° 추정. 도착 후 실측해서 고친다 (보정 경고·유령 판정의 화각 기준)
   camera_fov_deg: 48
@@ -17,4 +20,4 @@ fusion:
 webview:
   enabled: true             # 화면이 없으니 브라우저 실시간 화면 http://<Pi IP>:8090 (webview.py)
   port: 8090                # 8080은 관제 화면
-  guides: true              # 카메라 각도 기준선. 촬영할 때는 화면 위 "끄기" (/guides/off)
+  guides: false             # 필요할 때 화면 위 "켜기" (/guides/on)

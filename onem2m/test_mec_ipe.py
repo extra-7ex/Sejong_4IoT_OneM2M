@@ -177,6 +177,89 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual((con["state"], con["registry_state"]), (INACTIVE, INACTIVE))
         self.assertIn(("PUT", "http://mec/services/1", INACTIVE), calls)
 
+    def make_discovery_ipe(self, cse, clock, endpoint, state="ACTIVE", http_error=None):
+        entry = {"serName": "safezone-vision", "state": state,
+                 "transportInfo": {"endpoint": {"uris": [endpoint]}}}
+
+        def http(url, method="GET", body=None, timeout_s=5):
+            if http_error:
+                raise http_error
+            self.assertIn("/services?ser_name=safezone-vision", url)
+            return [entry]
+
+        cfg = load_config()
+        cfg.update({"probe": "mec-cin", "mn_base": "http://127.0.0.1:3000/TinyIoT-MN"})
+        registry = MecRegistry("http://127.0.0.1:18080/api/v1", "safezone-vision", 1, http=http)
+        return Ipe(cfg, reader=cse, writer=cse, registry=registry, clock=clock)
+
+    def test_mec_discovery_endpoint_is_called_through_mn_cse(self):
+        cse, clock = FakeCse(), Clock()
+        vision_frame(cse, clock.t)
+        ipe = self.make_discovery_ipe(
+            cse, clock,
+            "http://127.0.0.1:3000/TinyIoT-MN/AE-VisionAI/fusedTracks/la",
+        )
+        self.assertEqual(ipe.probe(clock.t), (True, "fresh"))
+        self.assertEqual(ipe.status_con(clock.t, "ACTIVE")["probe"], "mec-cin")
+
+    def test_explicit_remote_cse_can_be_discovered_and_recovered(self):
+        local, remote, clock = FakeCse(), FakeCse(), Clock()
+        remote_base = "http://edge-b:3000/TinyIoT-MN"
+        ipe = self.make_discovery_ipe(local, clock, remote_base + VISION + "/la")
+        ipe.cfg["fail_n"] = 1
+        ipe.live = Liveness(1)
+        ipe.discovery_base, ipe.discovery_reader = remote_base, remote
+        vision_frame(remote, clock.t)
+        self.assertEqual(ipe.step()["state"], ACTIVE)
+        clock.t += 10
+        self.assertEqual(ipe.step()["state"], INACTIVE)
+        vision_frame(remote, clock.t)
+        self.assertEqual(ipe.step()["state"], ACTIVE)
+
+    def test_discovered_cin_result_is_written_as_one_m2m_status(self):
+        cse, clock = FakeCse(), Clock()
+        vision_frame(cse, clock.t)
+        ipe = self.make_discovery_ipe(
+            cse, clock,
+            "http://127.0.0.1:3000/TinyIoT-MN/AE-VisionAI/fusedTracks/la",
+        )
+        result = ipe.step()
+        self.assertEqual((result["state"], result["probe"], result["registry_state"]),
+                         (ACTIVE, "mec-cin", ACTIVE))
+        self.assertEqual(self.cse_status(cse)[-1]["state"], ACTIVE)
+
+    def test_mec_service_must_be_active(self):
+        cse, clock = FakeCse(), Clock()
+        ipe = self.make_discovery_ipe(cse, clock, "http://127.0.0.1:3000/TinyIoT-MN/AE-VisionAI/fusedTracks/la",
+                                      state="INACTIVE")
+        self.assertEqual(ipe.probe(clock.t), (False, "mec_service_inactive"))
+
+    def test_mec_discovery_applies_the_same_fusedtracks_freshness_rule(self):
+        cse, clock = FakeCse(), Clock()
+        vision_frame(cse, clock.t - 10)
+        ipe = self.make_discovery_ipe(cse, clock,
+                                      "http://127.0.0.1:3000/TinyIoT-MN/AE-VisionAI/fusedTracks/la")
+        ipe.cfg["max_age_s"] = 2
+        self.assertEqual(ipe.probe(clock.t), (False, "stale 10.0s"))
+
+    def test_discovered_endpoint_cannot_redirect_probe_to_another_host(self):
+        cse, clock = FakeCse(), Clock()
+        ipe = self.make_discovery_ipe(cse, clock, "http://127.0.0.1:18081/mock-vision")
+        self.assertEqual(ipe.probe(clock.t), (False, "invalid_mec_service ValueError"))
+
+    def test_mec_registry_outage_is_indeterminate_not_service_failure(self):
+        cse, clock = FakeCse(), Clock()
+        ipe = self.make_discovery_ipe(
+            cse, clock,
+            "http://127.0.0.1:3000/TinyIoT-MN/AE-VisionAI/fusedTracks/la",
+            http_error=OSError("registry unavailable"),
+        )
+        self.assertEqual(ipe.probe(clock.t), (None, "mec_error registry unavailable"))
+
+    @staticmethod
+    def cse_status(cse):
+        return cse.status()
+
 
 class HttpProbeTest(unittest.TestCase):
     def test_http_probe_reports_status(self):
