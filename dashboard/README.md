@@ -41,6 +41,23 @@ python3 -m dashboard.server --port 8080
 
 Pi에서 bridge를 실행할 때도 `BRIDGE_IN_BASE=http://<NOTEBOOK_IP>:3000/TinyIoT`로 설정한다. MN의 Mcc 등록은 별도 CSE 연결 관계이고, event history는 bridge의 HTTP/Mca create 경로로 이동한다.
 
+### IN을 통한 MN 원격 조회 시험 (2026-11-21)
+
+기존 대시보드는 `DASH_CSE_BASE`에 IN의 원격 CSE 경로를 넣어 현재 상태를 IN을 통해 조회할 수 있다. 다음은 시험한 주소 형식이며 Pi와 노트북 주소, CSE ID 및 접근 권한은 실제 환경에 맞춰 확인해야 한다.
+
+```bash
+DASH_CSE_BASE=http://<IN_IP>:3000/~/tinyiot-mn/TinyIoT-MN \
+python3 -m dashboard.server --port 8080
+```
+
+요청은 대시보드 → IN의 Mca/HTTP, IN → MN의 Mcc로 전달된다. Pi MN에 별도 시험 AE와 조회 전용 ACP를 만들고 모의 radar, fusedTracks, alert, Vision 상태, events CIN을 생성한 뒤, 기존 대시보드의 `/api/state`가 다섯 값을 모두 IN 경유로 읽는 것을 확인했다. 권한이 없는 원격 식별자는 403/RSC 4103으로 거부됐다. 시험 리소스는 삭제했다.
+
+**운영 전환 전 확인:** 운영 radar 등에는 시험용 원격 식별자 조회 권한이 없으므로 현재 설정을 그대로 바꾸면 403이 발생한다. IN이 `CAdmin` 요청을 `/id-in/CAdmin`으로 전달하는 것을 확인했지만, 운영에는 관제 전용 식별자와 필요한 리소스의 RETRIEVE 권한을 별도로 설계하고 허용·거부를 시험한다. CSEBase 조회가 거부될 수도 있으며, 실제 시험에서 CNT 조회는 성공해도 MN 연결 표시가 HTTP 403으로 나타났다. 운영 ACP는 이 시험에서 바꾸지 않았다.
+
+위 예제는 `DASH_IN_BASE`를 설정하지 않으므로 이력은 대시보드 로컬 모드다. IN 이력까지 사용하려면 `DASH_IN_BASE`를 별도로 지정해야 하지만, 이 경우 IN 이력 컨테이너에 `rcn=4` 조회를 수행한다. 해당 동작은 사용 중인 IN의 빌드·데이터에서 별도로 검증한다. 이 시험은 이력 불러오기를 실행하지 않았다.
+
+대시보드의 `age_s`는 대시보드가 처음 보거나 변경을 감지한 뒤 경과한 시간으로, CIN의 원본 센서 시각 자체를 검증하지 않는다. 같은 오래된 CIN을 처음 읽으면 최근 수신으로 보일 수 있으므로 화면의 시간만으로 센서가 최신 상태라고 판단하지 않는다. 데이터 원본의 timestamp·통신 실패 표시와 복구 처리를 검증한 뒤 실제 대시보드를 전환한다.
+
 ### 장비 없이 화면 확인
 
 가짜 CSE가 사람이 다가왔다 멀어지는 상황을 30초 주기로 흉내 낸다.
