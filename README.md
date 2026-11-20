@@ -1,19 +1,15 @@
-# Sejong_4IoT_OneM2M
+# SafeZone
 
-**SafeZone: edge-based forklift proximity safety with mmWave radar + camera AI on oneM2M and ETSI MEC**  
-oneM2M Hackathon 2026 · Team 4IoT  
-레이더와 VisionAI로 작업자 근접 위험을 판단하고 현장 경보와 관제를 연결하는 엣지 시스템 (oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀)
+**Edge-based forklift proximity safety with mmWave radar + camera AI on oneM2M and ETSI MEC**  
+oneM2M Hackathon 2026 · Team 4IoT (Sejong University)
 
-▶️ **[Watch the demo video / SafeZone 실장비 시연 영상 보기](https://www.youtube.com/watch?v=yl5t3CzdHbM)**
+📄 [Hackster article](https://www.hackster.io/4iot/safezone-edge-based-forklift-proximity-safety-5540f5) · ▶️ [Demo video (4:24)](https://youtu.be/yl5t3CzdHbM) · 🇰🇷 [한국어 설명](#한국어-설명)
 
-## English overview (for judges)
+## Overview
 
-**SafeZone** is a forklift–pedestrian safety prototype for the oneM2M Hackathon 2026 by Team 4IoT (Sejong University). A 24 GHz mmWave radar (HLK-LD2450) and a camera AI (YOLO11n-pose on a Logitech C270) watch the area behind a forklift model. A risk engine on a Raspberry Pi 4 decides SAFE / WARNING / DANGER / UNKNOWN, and one oneM2M group request alerts the forklift alarm and the worker tag.
+A 24 GHz mmWave radar (HLK-LD2450) and a camera AI (YOLO11n-pose on a Logitech C270) watch the area behind a forklift model. A risk engine on a Raspberry Pi 4 decides SAFE / WARNING / DANGER / UNKNOWN, and one oneM2M group request alerts the forklift alarm and the worker tag.
 
-- 📄 **Project article (Hackster.io):** https://www.hackster.io/4iot/safezone-edge-based-forklift-proximity-safety-5540f5
-- ▶️ **Demo video (4:24):** https://youtu.be/yl5t3CzdHbM
-
-**What the demo shows**
+### What the demo shows
 
 | Case | What happens |
 |---|---|
@@ -22,14 +18,14 @@ oneM2M Hackathon 2026 · Team 4IoT
 | C. Camera AI stops | The radar keeps protecting; risk is not lowered |
 | D. Radar stops | Radar data goes stale after 5 s → UNKNOWN and the fork stops (fail-safe) |
 
-**oneM2M and MEC in this repo**
+### oneM2M and MEC in this repo
 
 - tinyIoT **MN-CSE** on the Pi, registered over **Mcc** to an **IN-CSE** on a laptop (Docker), which keeps the event history for the dashboard.
 - Resources: `AE-forklift01/radar` (radar CIN over the **MQTT** binding), `AE-VisionAI/fusedTracks`, `AE-riskengine/events`, and the group `grp-safezone-alarms` whose `/fopt` fan-out writes one alert into three alert containers. Devices receive it through **subscriptions** (HTTP notify). The worker tag registers itself with a label (`type:worker-alarm`) and its own **ACP**.
 - We patched tinyIoT so a group fan-out write triggers the members' notifications: [`onem2m/tinyiot-patches/`](onem2m/tinyiot-patches/).
 - **ETSI MEC:** the MEC IPE ([`onem2m/mec_ipe.py`](onem2m/mec_ipe.py)) finds the VisionAI service through the **MEC 011** service registry (AdvantEDGE App Enablement), checks that its data is fresh, and writes the status into oneM2M (`AE-mecIPE/MecServices/safezone-vision/status`). MEC 011 experiments: [`experiments/mec011-host-a/`](experiments/mec011-host-a/).
 
-**Repository map**
+### Repository map
 
 | Folder | What it is |
 |---|---|
@@ -42,18 +38,26 @@ oneM2M Hackathon 2026 · Team 4IoT
 | [`systemd/`](systemd/), [`tools/preflight.py`](tools/preflight.py) | Pi services and the pre-demo check |
 | [`docs/`](docs/) | Architecture, data formats, deployment record, wiring diagrams |
 
-**Run the tests** (Python 3.10+; no hardware needed)
+### Run the tests
+
+Python 3.10+, no hardware needed.
 
 ```bash
 python -m pytest -q engine onem2m radar dashboard
 cd vision && pip install -r requirements.txt && python -m pytest -q
 ```
 
-Setup and run steps for the Pi are in [`시연방법.md`](시연방법.md) and [`docs/runbook.md`](docs/runbook.md) (Korean). The rest of this README is in Korean; the Hackster article above is the full English write-up.
+Setup and run steps for the Pi are in [`시연방법.md`](시연방법.md) and [`docs/runbook.md`](docs/runbook.md) (Korean). The Korean section below has more detail; the Hackster article is the full English write-up.
 
-**License:** Apache 2.0, except `vision/` (AGPL-3.0, because it uses Ultralytics YOLO11). See section 7.
+### License
+
+Apache 2.0, except `vision/` (AGPL-3.0, because it uses Ultralytics YOLO11). Details: [7. 라이선스](#7-라이선스).
 
 ---
+
+## 한국어 설명
+
+레이더와 VisionAI로 작업자 근접 위험을 판단하고 현장 경보와 관제를 연결하는 엣지 시스템 (oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀)
 
 > 최종 수정: 2026-11-20
 
