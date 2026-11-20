@@ -18,6 +18,16 @@ A 24 GHz mmWave radar (HLK-LD2450) and a camera AI (YOLO11n-pose on a Logitech C
 | C. Camera AI stops | The radar keeps protecting; risk is not lowered |
 | D. Radar stops | Radar data goes stale after 5 s → UNKNOWN and the fork stops (fail-safe) |
 
+### Why oneM2M
+
+[oneM2M](https://www.onem2m.org/) is the global standard for IoT service platforms ([specifications](https://www.onem2m.org/technical/published-specifications)). We used the open-source [tinyIoT](https://github.com/seslabSJU/tinyIoT) CSE. In SafeZone, the standard gave us concrete benefits:
+
+- **One data model for every device.** The radar, the camera AI, the risk engine and both alarm boards all read and write the same `AE` / `container` / `contentInstance` resources, so we could swap the radar simulator for the real LD2450 without changing the engine.
+- **Plug-in alarms.** Devices are found by **label discovery** and alerted through one **group fan-out** write, so adding a new alarm needs no change in the alert writer.
+- **Push, not polling, for devices.** ESP8266 boards get alerts through **subscriptions**, and the same CSE serves both **HTTP** and **MQTT** bindings.
+- **Security built in.** Each device gets its own **access control policy**; an unregistered originator gets `403`.
+- **Edge to cloud.** The decision loop runs on the edge **MN-CSE**, which registers with the **IN-CSE** over **Mcc**, so the cloud keeps the history but is never in the safety loop.
+
 ### oneM2M and MEC in this repo
 
 - tinyIoT **MN-CSE** on the Pi, registered over **Mcc** to an **IN-CSE** on a laptop (Docker), which keeps the event history for the dashboard.
@@ -38,16 +48,54 @@ A 24 GHz mmWave radar (HLK-LD2450) and a camera AI (YOLO11n-pose on a Logitech C
 | [`systemd/`](systemd/), [`tools/preflight.py`](tools/preflight.py) | Pi services and the pre-demo check |
 | [`docs/`](docs/) | Architecture, data formats, deployment record, wiring diagrams |
 
-### Run the tests
+### Quick start
 
-Python 3.10+, no hardware needed.
+Addresses below are placeholders. The full Korean runbooks are [`시연방법.md`](시연방법.md) and [`docs/runbook.md`](docs/runbook.md).
+
+**0. Try it without hardware (unit tests, Python 3.10+)**
 
 ```bash
 python -m pytest -q engine onem2m radar dashboard
 cd vision && pip install -r requirements.txt && python -m pytest -q
 ```
 
-Setup and run steps for the Pi are in [`시연방법.md`](시연방법.md) and [`docs/runbook.md`](docs/runbook.md) (Korean). The Korean section below has more detail; the Hackster article is the full English write-up.
+**1. Edge node: Raspberry Pi 4 (Raspberry Pi OS 64-bit)**
+
+```bash
+# Radar on UART: raspi-config → Interface Options → Serial Port: login shell "No", hardware "Yes", then reboot
+sudo apt install mosquitto python3-serial python3-paho-mqtt
+git clone https://github.com/extra-7ex/Sejong_4IoT_OneM2M.git
+git clone https://github.com/seslabSJU/tinyIoT.git ~/tinyIoT
+cd ~/tinyIoT && git apply --check ~/Sejong_4IoT_OneM2M/onem2m/tinyiot-patches/fopt-notify.patch              && git apply ~/Sejong_4IoT_OneM2M/onem2m/tinyiot-patches/fopt-notify.patch
+# Edit source/server/config.h as in onem2m/config.mn.example.h (MN-CSE, port 3000, MQTT on, IN-CSE address)
+cd source/server && make clean && make
+```
+
+- Register the MN-CSE as a service: [`docs/runbook.md`](docs/runbook.md) §2 (`systemd/tinyiot-mn.service`).
+- VisionAI: set up `vision/` as in [`vision/README.md`](vision/README.md) (YOLO11n-pose, NCNN 320 on the Pi).
+
+**2. Cloud side: IN-CSE on a laptop**
+
+Run a second tinyIoT built with [`onem2m/config.in.example.h`](onem2m/config.in.example.h) as the IN-CSE (we ran it in Docker). The MN registers to it over Mcc at start-up; check `Remote CSE registration check: 200` in the MN log.
+
+**3. Start SafeZone on the Pi**
+
+```bash
+cd ~/Sejong_4IoT_OneM2M
+sudo bash systemd/install.sh $USER <VISION_DIR>
+sudo systemctl enable safezone-radar safezone-engine safezone-bridge safezone-ipe safezone-vision safezone.target
+python3 onem2m/alarm_group.py            # labels, discovery, ACPs and the alarm group
+sudo systemctl start safezone.target
+python3 tools/preflight.py               # checks services, data, alert writer and subscriptions
+```
+
+**4. Alarm devices (ESP8266, Arduino IDE)**
+
+Copy `secrets.example.h` to `secrets.h` (Wi-Fi and the Pi MN-CSE address), then flash [`esp8266/led_server/alert_node.ino`](esp8266/led_server/) to the forklift board and `worker_node.ino` to the worker tag. The worker tag registers itself; subscribe the forklift board with `bash onem2m/sub_alert_node.sh <ESP_IP>`. Wiring: [6.3 배선](#63-배선).
+
+**5. Dashboard**
+
+`DASH_CSE_BASE=http://<PI_IP>:3000/TinyIoT-MN DASH_IN_BASE=http://<IN_IP>:<PORT>/TinyIoT python3 -m dashboard.server --port 8080` shows live state from the MN-CSE and history from the IN-CSE ([`dashboard/README.md`](dashboard/README.md)).
 
 ### License
 
