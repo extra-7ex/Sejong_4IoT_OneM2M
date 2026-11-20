@@ -34,25 +34,53 @@ Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 �
 
 ```mermaid
 flowchart LR
-  LD["LD2450"] -->|"UART"| RIPE["Radar Collection IPE / MN-AE"]
-  RIPE -->|"Mca · MQTT radar CIN"| MN["Pi tinyIoT MN-CSE<br/>oneM2M MN-CSE"]
-  CAM["C270"] -->|"USB"| VIS["VisionAI"]
-  VIS -->|"Mca · HTTP fusedTracks CIN"| MN
-  RAD["radar CNT"] <-->|"Mca · HTTP polling"| RE["RiskEngine<br/>separate install"]
-  FUSED["fusedTracks CNT"] <-->|"Mca · HTTP polling"| RE
-  RE -->|"HTTP CIN create"| OUT["events + grp-safezone-alarms/fopt"]
-  OUT -->|"verified fopt fan-out"| ALERTS["forklift / worker / zone alert CNTs"]
-  ALERTS -->|"Mca · SUB HTTP notification"| ESP["ESP8266 devices"]
-  MN <-->|"Mca · HTTP"| BR["MN→IN bridge AE"]
-  BR -->|"Mca · HTTP summary create"| IN["Laptop Docker IN-CSE"]
-  DASH["Notebook dashboard"] -->|"Mca · HTTP"| MN
-  DASH -->|"Mca · HTTP"| IN
-  IPE["MEC IPE<br/>Vision status"] -->|"Mca · GET state / POST health"| MN
-  MN -->|"Mcc · CSE registration"| IN
-  IPE <-->|"HTTP · MEC011 service discovery"| MECREG["Pi-local mock MEC011 registry<br/>Vision service manually registered"]
+  LD["LD2450"] -->|"UART"| RIPE
+  CAM["C270"] -->|"USB"| VIS
+
+  subgraph PI["Raspberry Pi"]
+    RIPE["레이더 수집 AE"]
+    VIS["VisionAI"]
+    RE["RiskEngine"]
+    IPE["MEC 연동 AE / IPE"]
+    subgraph MN["tinyIoT · oneM2M MN-CSE"]
+      CSE["CSE endpoint"]
+      RAD["radar CNT"]
+      FUSED["fusedTracks CNT"]
+      EVENT["events CNT"]
+      GROUP["경보 그룹 /fopt"]
+      FA["forklift alert CNT"]
+      WA["worker alert CNT"]
+      ZA["zone alert CNT"]
+      STATUS["MEC 서비스 status CNT"]
+      GROUP -->|"fan-out"| FA
+      GROUP -->|"fan-out"| WA
+      GROUP -->|"fan-out"| ZA
+    end
+    MECREG["MEC 서비스 등록부<br/>Vision 시험 서비스 수동 등록"]
+    BR["MN→IN 이력 브리지"]
+  end
+
+  RIPE -->|"Mca · MQTT CIN 생성"| RAD
+  VIS -->|"Mca · HTTP CIN 생성"| FUSED
+  RE -->|"Mca · HTTP polling"| RAD
+  RE -->|"Mca · HTTP polling"| FUSED
+  RE -->|"Mca · HTTP CIN 생성"| EVENT
+  RE -->|"Mca · HTTP CIN 생성"| GROUP
+  FA -->|"SUB · HTTP /notify"| FE["지게차 ESP<br/>서보 · 부저"]
+  WA -->|"SUB · HTTP via AE poa"| WE["작업자 ESP<br/>부저"]
+  IPE -->|"MEC011 서비스 발견"| MECREG
+  IPE -->|"Mca · HTTP 최신 CIN 조회"| FUSED
+  IPE -->|"Mca · HTTP 상태 기록"| STATUS
+  CSE -->|"Mcc · CSE 등록"| IN["노트북 IN-CSE"]
+  BR -->|"Mca · HTTP 조회"| EVENT
+  BR -->|"Mca · HTTP 이력 기록"| IN
+  DASH["노트북 대시보드"] -->|"Mca · HTTP 현재 상태 조회"| CSE
+  DASH -->|"Mca · HTTP 이력 조회"| IN
 ```
 
-Radar 업로더만 Pi에서 MQTT로 radar CIN을 만든다. RiskEngine이 레이더와 설정된 Vision CIN을 HTTP polling해 위험을 판단하고, `events`와 경보 그룹에 HTTP로 기록한다. VisionAI는 USB 카메라 영상을 처리해 HTTP로 `fusedTracks`를 쓴다. 두 ESP의 SUB 알림도 HTTP다. MN은 노트북 IN에 Mcc로 등록되어 있고, 이벤트 이력 전달은 브리지 AE가 양쪽 CSE에 Mca/HTTP 요청을 보내는 별도 경로다. 노트북 대시보드는 MN 현재 상태와 IN 이력을 조회한다. Pi 임시 대시보드는 이 구조도에서 제외했다.
+그림의 CNT와 그룹은 MN-CSE 안의 리소스다. 그룹은 세 alert CNT의 멤버 참조를 보유하며, zone은 물리 경보 장치가 없는 확장용 CNT다. RiskEngine이 레이더와 Vision CIN을 HTTP polling하고 `events`와 경보 그룹에 HTTP로 기록한다. 레이더 업로더의 radar CIN 생성은 MQTT다. 두 ESP로 가는 SUB 알림은 HTTP다.
+
+MN의 IN 등록은 Mcc 관계이며 이벤트 이력은 별도 브리지가 HTTP로 복사한다. 대시보드는 브라우저와 통신하는 조회 프로그램이며 독립 등록 AE로 확인된 것은 아니다. MEC IPE는 수동 등록된 서비스를 발견해 `fusedTracks`의 신선도를 조회하고 상태를 기록한다. RiskEngine은 이 IPE 상태를 입력으로 사용하지 않는다. 그림은 시연·시험 경로이며 최신 ACP 적용 뒤 두 ESP의 물리 동작까지 재확인한 것은 아니다.
 
 ### oneM2M 서버로 tinyIoT를 선택한 이유
 
@@ -85,13 +113,17 @@ Pi 운영 RiskEngine은 별도 설치 snapshot에서 실행되며, `RADAR_LOCAL_
 다음 리소스 트리는 Pi에서 조회해 확인한 경로와 그룹 구성을 요약한다. 독립 시험 서버와 운영 Pi는 서로 다른 설정·DB를 사용한다.
 
 ```text
-TinyIoT-MN
-├─ grp-safezone-alarms       [GRP] forklift / worker / zone alert CNT 3개
+TinyIoT-MN                                      [CSEBase]
+├─ grp-safezone-alarms                          [GRP] mid → 세 alert CNT 참조
+│  └─ fopt                                      [가상 fan-out 요청 지점]
 ├─ AE-forklift01             [AE]
 │  ├─ radar                  [CNT] LD2450 frame CIN
-│  └─ alert                  [CNT] forklift SUB uses HTTP /notify
+│  └─ alert                  [CNT]
+│     └─ sub-alert-node      [SUB] → forklift ESP HTTP /notify
 ├─ AE-worker01               [AE] lbl type:worker-alarm
-│  └─ alert                  [CNT] worker SUB nu=Cworker01 → AE poa
+│  ├─ alert                  [CNT]
+│  │  └─ sub-worker01       [SUB] nu=Cworker01 → AE poa
+│  └─ status                 [CNT] worker 상태
 ├─ AE-riskengine             [AE]
 │  └─ events                 [CNT] RiskEngine event history
 ├─ AE-VisionAI               [AE]
@@ -99,8 +131,12 @@ TinyIoT-MN
 ├─ AE-zonealarm01            [AE]
 │  └─ alert                  [CNT] group member; no physical zone device
 └─ AE-mecIPE                 [AE]
-   └─ status                 [CNT] Vision service-health state
+   └─ MecServices            [CNT]
+      └─ safezone-vision     [CNT]
+         └─ status           [CNT] Vision service-health state
 ```
+
+트리는 주요 리소스만 요약하며 ACP, CIN 및 추가 SUB 전체 목록은 생략했다. `fopt`는 하위 CNT가 아니라 그룹의 fan-out 요청 지점이다. SUB의 대상 IP와 AE의 `poa`는 네트워크에 따라 바뀔 수 있다.
 
 worker AE 재등록 후 새 alert CNT RI를 경보 그룹 `mid`에 연결했다. 후속 ACP 변경으로 운영 group `macp`와 세 alert CNT에 `Criskengine` CREATE 권한을 설정하고 `cnm=3`을 확인했다. 녹화 시연에서는 `/fopt` fan-out 뒤 worker ESP의 DANGER 모드를 관찰했으며, 촬영 후 ACP 재시험은 세 CNT 기록까지만 확인했다. 정확한 ACP/SUB URI와 서버별 CSE naming은 [배포 기록](docs/deployment.md)에서 구분한다.
 
