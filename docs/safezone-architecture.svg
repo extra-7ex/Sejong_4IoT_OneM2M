@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1160" role="img" aria-labelledby="title desc">
-  <title id="title">SafeZone verified call flow and MEC target</title>
-  <desc id="desc">Current Pi call flow for radar, VisionAI, RiskEngine, oneM2M alerts, ESP devices, bridge, and dashboard. The Mp1 MEC011 link is a target and was not live-verified.</desc>
+  <title id="title">SafeZone verified demo call flow and MEC next step</title>
+  <desc id="desc">Pi radar, VisionAI, RiskEngine, and oneM2M alert flow; Mcc registration and HTTP/Mca event bridge to the laptop IN-CSE and dashboard. MEC011 discovery is a next step.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 z" fill="#35506b"/></marker>
     <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 z" fill="#2779a8"/></marker>
@@ -28,7 +28,7 @@
   </defs>
   <rect width="1600" height="1160" fill="#f4f7fa"/>
   <text x="48" y="54" class="title">SafeZone · verified call flow</text>
-  <text x="48" y="82" class="subtitle">Pi deployment and reported model tests, 20 Nov 2026 · dotted Mp1/MEC011 link is a target, not a live integration</text>
+  <text x="48" y="82" class="subtitle">Verified Pi demo flow and laptop monitoring path · dotted Mp1/MEC011 link is a next step</text>
 
   <rect x="285" y="112" width="1005" height="840" class="pi"/>
   <text x="315" y="146" class="piTitle">Raspberry Pi edge node</text>
@@ -51,10 +51,9 @@
   <text x="337" y="432" class="nodeText">HTTP fusedTracks CIN</text>
 
   <rect x="700" y="265" width="285" height="125" class="boxPurple"/>
-  <text x="724" y="303" class="nodeTitle">tinyIoT MN-CSE</text>
+  <text x="724" y="303" class="nodeTitle">tinyIoT MN-CSE (MEC App)</text>
   <text x="724" y="330" class="nodeText">oneM2M CSE · Pi edge service</text>
-  <text x="724" y="355" class="nodeText">MEC App role in reference diagram</text>
-  <text x="724" y="376" class="nodeText">Mca resources and subscriptions</text>
+  <text x="724" y="355" class="nodeText">Mca resources and subscriptions</text>
 
   <rect x="1030" y="265" width="230" height="125" class="boxOrange"/>
   <text x="1053" y="303" class="nodeTitle">RiskEngine</text>
@@ -80,7 +79,7 @@
   <rect x="1038" y="558" width="105" height="62" class="box"/>
   <text x="1054" y="583" class="nodeText">Worker</text><text x="1054" y="603" class="nodeText">alert CNT</text>
   <rect x="1155" y="558" width="105" height="62" class="box"/>
-  <text x="1167" y="583" class="nodeText">Zone alert</text><text x="1175" y="603" class="nodeText">CNT · no device</text>
+  <text x="1167" y="583" class="nodeText">Zone alert</text><text x="1175" y="603" class="nodeText">CNT · logical endpoint</text>
 
   <!-- App and system flows -->
   <path d="M245 232 H315" class="edge"/><text x="250" y="218" class="label">UART</text>
@@ -100,21 +99,20 @@
 
   <!-- Health IPE, bridge, dashboard, and external MEC/IN -->
   <rect x="315" y="710" width="250" height="105" class="boxGreen"/>
-  <text x="337" y="745" class="nodeTitle">Vision service-health IPE</text>
+  <text x="337" y="745" class="nodeTitle">MEC IPE</text>
   <text x="337" y="772" class="nodeText">reads freshness + cam_ok</text>
   <text x="337" y="795" class="nodeText">writes status · no video inference</text>
   <rect x="640" y="710" width="230" height="105" class="boxBlue"/>
   <text x="662" y="745" class="nodeTitle">MN→IN bridge AE</text>
   <text x="662" y="772" class="nodeText">HTTP polling on MN</text>
   <text x="662" y="795" class="nodeText">HTTP event summary to IN</text>
-  <rect x="930" y="710" width="220" height="105" class="box"/>
-  <text x="953" y="745" class="nodeTitle">Dashboard AE</text>
-  <text x="953" y="772" class="nodeText">MN live state + IN history</text>
-  <text x="953" y="795" class="nodeText">HTTP/Mca calls</text>
   <rect x="1340" y="710" width="225" height="105" class="box"/>
   <text x="1361" y="745" class="nodeTitle">Laptop Docker IN-CSE</text>
   <text x="1361" y="772" class="nodeText">event history store</text>
-  <text x="1361" y="795" class="nodeText">bridge uses Mca, not Mcc</text>
+  <text x="1361" y="795" class="nodeText">Mcc registration · separate bridge</text>
+  <rect x="1340" y="850" width="225" height="90" class="box"/>
+  <text x="1361" y="885" class="nodeTitle">Notebook dashboard</text>
+  <text x="1361" y="912" class="nodeText">MN state + IN history</text>
   <rect x="1340" y="150" width="225" height="115" class="boxPurple"/>
   <text x="1361" y="188" class="nodeTitle">ETSI MEC Platform</text>
   <text x="1361" y="216" class="nodeText">Mp1 · MEC011</text>
@@ -124,10 +122,14 @@
   <text x="575" y="694" class="label">Mca · GET Vision state / POST health</text>
   <path d="M755 815 V850 H1275 V410 H880 V390" class="edgeBi"/>
   <text x="790" y="875" class="label">Mca · HTTP polling / summary write</text>
-  <path d="M755 815 V865 H1450 V815" class="edge"/>
-  <path d="M1040 710 V675 H1280 V435 H960 V390" class="edge"/>
-  <path d="M1150 760 H1340" class="edge"/>
-  <text x="1157" y="744" class="label">Mca read</text>
+  <path d="M755 815 V830 H1450 V815" class="edge"/>
+  <text x="960" y="823" class="label">Mca · event summary create</text>
+  <path d="M985 385 H1298 V695 H1340 V710" class="edge"/>
+  <text x="1040" y="405" class="label">Mcc · CSE registration</text>
+  <path d="M1340 875 H1315 V440 H970 V390" class="edge"/>
+  <text x="1190" y="432" class="label">Mca read MN</text>
+  <path d="M1450 850 V815" class="edge"/>
+  <text x="1465" y="842" class="label">Mca read IN</text>
   <path d="M842 265 V160 H1320 V207 H1340" class="target"/>
   <text x="1030" y="150" class="label">Mp1 · service registration / discovery target</text>
 
@@ -141,7 +143,7 @@
   <text x="873" y="1068" class="nodeText">buzzer + LED · DANGER mode observed</text>
   <text x="873" y="1090" class="nodeText">SUB nu=Cworker01 → AE poa</text>
   <path d="M972 620 V965 H652 V1005" class="edgeBlue"/>
-  <text x="660" y="948" class="label">Mca · SUB HTTP /notify · earlier model test</text>
+  <text x="660" y="948" class="label">Mca · SUB HTTP /notify · demo</text>
   <path d="M1090 620 V980 H992 V1005" class="edgeBlue"/>
   <text x="1005" y="964" class="label">Mca · SUB notification</text>
 
@@ -150,5 +152,5 @@
   <text x="118" y="1138" class="nodeText">Solid: deployed path or dated test</text>
   <line x1="430" y1="1133" x2="490" y2="1133" class="target"/>
   <text x="503" y="1138" class="nodeText">Dotted: unverified target</text>
-  <text x="820" y="1138" class="nodeText">Current Vision test: fresh fusedTracks, tracks=[] · continuous service not verified</text>
+  <text x="820" y="1138" class="nodeText">Demo: same-person confirmed · posture raised WARNING → DANGER</text>
 </svg>

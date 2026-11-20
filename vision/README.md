@@ -59,6 +59,20 @@ python3 -m venv .venv
 ```
 팀 제안 기본 CSE 이름은 `TinyIoT-MN`이다. Pi에 실제 적용했는지 먼저 확인하고, 다르면 `config.local.yaml`의 `onem2m: {cse_name: ...}`에 실제 이름을 지정한다. [전환 안내](../docs/cse-naming.md)
 
+### Pi 녹화 시연 실행
+
+2026-11-20 시연에서는 C270 영상을 VisionAI가 연속 처리해 새 `fusedTracks`를 만들었고, RiskEngine이 이를 fresh 입력으로 읽었다. 카메라·레이더가 같은 사람을 confirmed로 연결하고 쭈그린 자세에 따라 WARNING을 DANGER로 올리는 장면도 확인했다. Pi 실행 환경은 `/home/user/vision4iot`였다.
+
+카메라가 연결되어 있고 Pi MN-CSE가 실행 중인지 확인한 뒤, VisionAI를 터미널에서 시작한다. demo 동안 이 프로세스를 계속 실행한다.
+
+```bash
+cd /home/user/vision4iot
+ls /dev/video*
+.venv/bin/python -m vision4iot.main --config config.pi.yaml --radar onem2m --output onem2m --base-url http://127.0.0.1:3000
+```
+
+실행 중에는 C270의 새 프레임과 `cam_ok`, `AE-VisionAI/fusedTracks/la`의 생성 시각을 확인한다. RiskEngine이 같은 최신 CIN을 fresh로 읽는지도 확인한다. 위 시연은 수동으로 프로세스를 시작한 기록이며, 부팅 시 자동 시작을 보장하는 systemd 설정과는 별도다. 자동 시작을 구성했다면 재부팅 후 프로세스·새 CIN·MEC IPE 상태를 각각 확인한다.
+
 카메라 위치 맞추기 → 바닥 보정(카메라를 옮기면 다시):
 ```
 .venv/bin/python tools/live_view.py          # 브라우저 http://4Iot.local:8080, 바닥/벽 경계를 초록 선 근처로. 다 맞추면 Ctrl+C

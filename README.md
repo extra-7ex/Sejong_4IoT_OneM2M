@@ -5,7 +5,7 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 > 최종 수정: 2026-11-20
 
-> **실제 배치 상태 (2026-11-20):** Pi 레이더 CIN 수집은 MQTT, RiskEngine 입력·기록은 HTTP polling/create이며, 경보 그룹 fan-out으로 DANGER가 세 alert CNT에 기록되고 작업자 ESP가 위험 모드에 들어가는 것을 확인했다. worker AE 재등록 뒤 그룹 멤버 RI도 복구했다. 두 ESP 보드가 동작한다. C270을 인식했고 VisionAI 수동 실행에서 fresh `fusedTracks`를 RiskEngine이 읽었지만 `tracks`는 비어 있었다. Vision 상시 실행이나 사람 검출은 확인하지 않았다. 11월 15일·18일 모형 시험에서 SG90 포크 서보와 부저 동작을 보고했으며 실제 지게차 주행 모터 제어는 아니다. DHCP 예약, 재부팅 복구 및 안전 성능은 미검증이다. 자세한 [아키텍처](docs/architecture.md)와 [배포 기록](docs/deployment.md)를 참고한다.
+> **시연에서 확인한 동작 (2026-11-20):** Pi 레이더 업로더가 MQTT로 CIN을 만들고 RiskEngine이 HTTP polling으로 레이더와 Vision 입력을 판단해 경보 그룹에 기록한다. 영상에서 거리 단계, 카메라·레이더 동일 작업자 확인과 쭈그린 자세에 따른 WARNING→DANGER, VisionAI 중단, 레이더 중단 시 UNKNOWN→모형 포크 정지를 보여 준다. 그룹 기록은 세 경보 CNT에 fan-out됐고 작업자 ESP의 DANGER 모드를 확인했다. Pi MN-CSE는 노트북 IN-CSE에 등록되어 있으며 이력은 별도 HTTP/Mca 브리지가 옮기고 노트북 대시보드가 조회한다. Vision의 자동 부팅 등록과 장기 신뢰성은 확인하지 않았다. 11월 20일 점검 시 DHCP 예약은 구성되지 않았다. SG90은 모형 포크를 움직이며 실제 지게차 주행 모터를 제어하지 않는다. 자세한 [아키텍처](docs/architecture.md)와 [배포 기록](docs/deployment.md)를 참고한다.
 
 ---
 
@@ -43,13 +43,14 @@ flowchart LR
   ALERTS -->|"Mca · SUB HTTP notification"| ESP["ESP8266 devices"]
   MN <-->|"Mca · HTTP"| BR["MN→IN bridge AE"]
   BR -->|"Mca · HTTP summary create"| IN["Laptop Docker IN-CSE"]
-  DASH["Dashboard"] -->|"Mca · HTTP"| MN
+  DASH["Notebook dashboard"] -->|"Mca · HTTP"| MN
   DASH -->|"Mca · HTTP"| IN
-  IPE["Vision health IPE<br/>state only"] -->|"Mca · GET state / POST health"| MN
+  IPE["MEC IPE<br/>Vision status"] -->|"Mca · GET state / POST health"| MN
+  MN -->|"Mcc · CSE registration"| IN
   MN -.->|"Mp1 · MEC011 registration / discovery<br/>target, unverified"| MEC["ETSI MEC Platform"]
 ```
 
-Radar 업로더만 Pi에서 MQTT로 radar CIN을 만든다. RiskEngine은 radar와 설정된 Vision CIN을 HTTP polling하고, `events`와 경보 그룹에 HTTP로 쓴다. VisionAI는 USB 카메라 영상을 처리해 HTTP로 `fusedTracks`를 쓴다. ESP 구독 알림과 MN→IN bridge도 HTTP이며, 이력 이동은 브리지 AE가 양쪽 CSE에 Mca 요청을 보내는 구조로 직접 Mcc가 아니다.
+Radar 업로더만 Pi에서 MQTT로 radar CIN을 만든다. RiskEngine이 레이더와 설정된 Vision CIN을 HTTP polling해 위험을 판단하고, `events`와 경보 그룹에 HTTP로 기록한다. VisionAI는 USB 카메라 영상을 처리해 HTTP로 `fusedTracks`를 쓴다. 두 ESP의 SUB 알림도 HTTP다. MN은 노트북 IN에 Mcc로 등록되어 있고, 이벤트 이력 전달은 브리지 AE가 양쪽 CSE에 Mca/HTTP 요청을 보내는 별도 경로다. 노트북 대시보드는 MN 현재 상태와 IN 이력을 조회한다. Pi 임시 대시보드는 이 구조도에서 제외했다.
 
 ### oneM2M 서버로 tinyIoT를 선택한 이유
 
@@ -67,13 +68,13 @@ LD2450의 2D 표적 좌표로 현재 거리를 계산하고, 연속 좌표와 �
 
 ### 3.2 경보와 장치 제어
 
-Pi 운영 RiskEngine은 별도 설치 snapshot에서 실행되며, `RADAR_LOCAL_DECISION=0`일 때 엔진이 `events`와 경보 그룹을 기록한다. 그룹 `/fopt` fan-out으로 세 alert CNT에 DANGER가 기록됐고, worker ESP가 위험 모드에 들어가는 것을 확인했다. worker AE 재등록 뒤 alert CNT RI가 바뀌어 그룹 `mid`를 다시 연결했다. 11월 15일·18일 모형 시험에서는 WARN/DANGER에 따른 SG90 포크 서보와 부저 동작을 보고했다. 이는 실제 지게차 주행 모터 정지나 안전 인터락이 아니다.
+Pi 운영 RiskEngine은 별도 설치 snapshot에서 실행되며, `RADAR_LOCAL_DECISION=0`일 때 엔진이 위험을 판단해 `events`와 경보 그룹에 기록한다. 그룹 `/fopt` fan-out으로 세 alert CNT에 DANGER가 기록되고 worker ESP가 위험 모드에 들어가는 것을 확인했다. 시연에서는 SG90 포크 서보가 모형 포크를 멈추는 장면도 보였다. 카메라는 위험도를 올릴 수 있지만 내리지는 않으며, 레이더 입력이 만료되면 UNKNOWN을 기록하고 모형 포크를 정지한다. 실제 지게차 주행 모터 제어나 안전 인터락은 아니다.
 
-네트워크 단절 시 독립 정지, `UNKNOWN` 시 fail-safe 동작, 부팅 후 그룹 복구, 모든 출력 조합과 장기 신뢰성은 검증하지 않았다.
+레이더 입력 만료 후 `UNKNOWN`과 SG90 모형 포크 정지는 시연했다. 엔진·CSE·Wi-Fi 자체가 끊겼을 때의 독립 정지, 부팅 후 그룹 복구, 모든 출력 조합과 장기 신뢰성은 검증하지 않았다.
 
 ### 3.3 Vision과 IN-CSE
 
-2026-11-20 장비 복구 뒤 C270을 인식하고 `/home/user/vision4iot` 환경에서 VisionAI를 수동 실행해 fresh `fusedTracks`를 만들었으며 RiskEngine이 fresh로 읽는 것을 확인했다. 당시 `tracks=[]`여서 이 결과는 입력·호출 경로 확인이지 사람 검출 확인이 아니다. systemd 상시 실행은 미검증이다. Pi 브리지는 MN events를 HTTP polling해 노트북 Docker IN에 기록하고, 대시보드에서 MN 상태와 IN 이력을 조회하는 것을 확인했다. 이 브리지 방식은 직접 Mcc가 아니다.
+시연 영상에서 VisionAI는 C270 입력을 처리해 레이더와 같은 사람을 confirmed로 연결했고, 쭈그린 자세 신호가 WARNING을 DANGER로 올렸다. 카메라 AI를 중지하는 경우와 레이더 입력이 만료되는 경우도 각각 시연했다. 노트북 대시보드는 MN 현재 상태와 브리지가 IN에 쌓은 이력을 표시한다. VisionAI는 시연 중 실행했으며 부팅 시 자동 시작 설정은 별도 확인 대상이다.
 
 ## 4. oneM2M 리소스 설계
 
@@ -138,7 +139,7 @@ CIN의 `con`은 JSON 문자열일 수 있다. Vision의 `ttc_s`와 RiskEngine의
 | VisionAI → MN-CSE | C270 USB input; VisionAI HTTP fusedTracks CIN create |
 | MN-CSE ↔ RiskEngine | HTTP polling for radar/Vision; HTTP create for events and alert-group `/fopt` |
 | alert CNT → ESP | HTTP SUB notification over Mca; worker DANGER mode verified; forklift servo/buzzer in dated model tests |
-| MN→IN bridge AE | HTTP/Mca polling on MN and HTTP/Mca summary create on laptop Docker IN; no direct Mcc |
+| MN-CSE → IN-CSE | MN registers with laptop IN over Mcc; a separate bridge AE copies event summaries over HTTP/Mca |
 | MN-CSE ↔ MEC Platform | Mp1/MEC011 registration/discovery is target mapping only; not live-verified |
 
 ## 5. 저장소 구조
@@ -158,7 +159,7 @@ Sejong_4IoT_OneM2M/
 ├─ onem2m/                      MN→IN 브리지, MEC 생존 확인 IPE, 경보 장치 그룹(lbl+grp), 지연 측정, 구독·CSE 스크립트
 ├─ dashboard/                   관제 대시보드 (MN 실시간, IN 이력, VisionAI 상태)
 ├─ esp8266/                     지게차 노드(alert_node), 작업자 노드(worker_node), MQTT 판
-├─ systemd/                     시연 서비스 (radar·engine·bridge·dashboard·IPE; VisionAI 최신 확인은 수동 실행)
+├─ systemd/                     Pi 서비스 (radar·engine·bridge·MEC IPE; 로컬 dashboard unit은 임시)
 ├─ tools/preflight.py           시연 전 점검 (서비스·데이터·경보 작성자·죽은 구독)
 ├─ experiments/mec011-host-a/   MEC 011 서비스 등록·발견 실험, oneM2M↔MEC 연동 AE
 └─ camera/                      (초기 버전) 웹캠 모션 감지
@@ -175,7 +176,7 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | 장비 | 수량 | 용도 |
 |---|---|---|
 | HLK-LD2450 24GHz 레이더 | 1 | Pi UART로 작업자 무태그 감지 입력 |
-| Raspberry Pi 4B | 1 | tinyIoT MN-CSE, radar uploader, RiskEngine, bridge, dashboard, health IPE |
+| Raspberry Pi 4B | 1 | tinyIoT MN-CSE, radar uploader, RiskEngine, bridge, MEC IPE |
 | Logitech C270 | 1 | USB 카메라; VisionAI가 영상 처리 |
 | NodeMCU ESP8266 + HW-389 | 1 | 축소 지게차 경보 노드 |
 | SG90 서보 + 부저 | 각 1 | 모형 포크 움직임·정지와 경보음. 주행 모터가 아님 |
@@ -183,7 +184,7 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | 9 V 배터리 | 1 | 모형 안의 forklift alarm node 전원 |
 | Pi용 5 V, 3 A 전원 | 1 | Raspberry Pi 전원 |
 | USB 보조배터리 | 1 | 휴대폰 핫스팟 외부 구성 시험에서 사용 |
-| 노트북 | 1 | Docker IN-CSE |
+| 노트북 | 1 | Docker IN-CSE와 시연 대시보드 |
 | 3D 프린팅 부품 | 필요 수량 | 지게차 축소 모형, 레이더 장착부, 작업자 태그 케이스 |
 
 ### 6.2 소프트웨어
@@ -194,6 +195,7 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | oneM2M CSE | tinyIoT (C, DB는 SQLite) |
 | 레이더·RiskEngine·VisionAI·브리지·대시보드·IPE | Python 3 |
 | VisionAI | Ultralytics YOLO, OpenCV |
+| MQTT broker | Mosquitto (Pi) |
 | IN-CSE | Docker 컨테이너 |
 | ESP8266 | Arduino IDE, ESP8266 board package, ArduinoJson |
 | oneM2M CSE | tinyIoT MN-CSE 및 IN-CSE |

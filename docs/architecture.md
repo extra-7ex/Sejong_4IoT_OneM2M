@@ -2,58 +2,61 @@
 
 ## 2026-11-20 Pi 현장 확인과 장비 복구 후속 보고
 
-상세 Pi 조회는 18:45 KST의 읽기 전용 스냅샷이고, 그 이후 장비를 복구한 결과는 작업자 보고로 추가했다. 서비스·리소스 관찰과 수동 Vision 실행은 시간상 서로 다른 상태다. 주소와 계정은 공개하지 않는다. 전체 재부팅 복구, Vision 상시 가용성, 장기 운용 및 안전 성능은 검증하지 않았다. 상세 기록은 [배포 및 운영 기록](deployment.md)을 참고한다.
+18:45 KST 읽기 전용 Pi 스냅샷에 이어 장비 복구와 녹화 시연에서 확인한 결과를 반영했다. 아래 흐름은 시연 구성이다. Pi 임시 대시보드는 시스템 아키텍처에서 제외하고, 노트북의 Docker IN-CSE와 대시보드를 관제 경로로 표시한다. 상세한 배포 기록은 [배포 및 운영 기록](deployment.md)을 참고한다.
 
 ```mermaid
 flowchart LR
-  LD["LD2450"] -->|"UART"| UP["Pi radar uploader"]
-  UP -->|"MQTT: oneM2M CIN create"| MN["Pi tinyIoT MN-CSE"]
+  LD["LD2450"] -->|"UART"| UP["Pi Radar Collection IPE / MN-AE"]
+  UP -->|"MQTT: radar CIN create"| MN["Pi tinyIoT MN-CSE"]
   MN --> RAD["AE-forklift01/radar CNT"]
   RAD -->|"HTTP GET /la · polling"| RE["RiskEngine<br/>별도 설치본"]
   CAM["Logitech C270"] --> VISION["VisionAI<br/>/home/user/vision4iot"]
-  VISION -->|"HTTP: oneM2M CIN · manual run"| FUSED["AE-VisionAI/fusedTracks CNT"]
+  VISION -->|"HTTP: oneM2M CIN · continuous demo run"| FUSED["AE-VisionAI/fusedTracks CNT"]
   FUSED -->|"HTTP GET latest CIN · polling"| RE
   RE -->|"HTTP CIN create"| EV["AE-riskengine/events CNT"]
   RE -->|"HTTP POST /fopt"| GRP["grp-safezone-alarms"]
   GRP --> FA["forklift alert CNT"]
   GRP --> WA["worker alert CNT"]
   GRP --> ZA["zone alert CNT"]
-  FA -.->|"SUB: HTTP /notify"| E1["Forklift ESP"]
+  FA -->|"SUB: HTTP /notify"| E1["Forklift ESP · SG90 + buzzer"]
   WA -->|"SUB nu=Cworker01 → AE poa"| E2["Worker ESP<br/>DANGER risk mode observed"]
-  EV -->|"HTTP polling · summary"| BR["MN→IN bridge"]
-  BR -->|"HTTP"| IN["Laptop Docker IN-CSE"]
-  MN --> DASH["Pi dashboard"]
-  IN --> DASH
-  MN --> IPE["MEC service-health IPE"]
+  EV -->|"HTTP polling · event summary"| BR["MN→IN bridge AE"]
+  MN --> IPE["MEC IPE"]
   IPE -->|"HTTP GET Vision CIN / POST health"| MN
+  IN["Laptop Docker IN-CSE"]
+  BR -->|"HTTP/Mca event summary"| IN
+  MN -->|"Mcc · CSE registration"| IN
+  DASH["Notebook dashboard"]
+  DASH -->|"Mca · HTTP"| MN
+  DASH -->|"Mca · HTTP"| IN
 ```
 
-RiskEngine은 MQTT에서 레이더 알림을 구독하지 않는다. 업로더가 MQTT로 radar CIN을 만들고, 운영 엔진은 radar와 설정된 `fusedTracks/la`를 HTTP polling으로 읽는다. 판단 결과는 HTTP로 `events`에 쓰고 `/grp-safezone-alarms/fopt` 경보 그룹에 기록한다. 그룹에는 세 alert CNT의 현재 RI가 들어 있으며, worker AE 재등록 뒤 worker alert RI도 그룹에 다시 연결된 것을 확인했다. DANGER CIN은 세 alert CNT 모두에 기록됐고 작업자 ESP가 위험 모드에 진입했다. 두 ESP 보드가 동작하는 것도 확인됐지만, 현장 확인에서 명시적으로 관찰한 DANGER 출력은 작업자 ESP의 위험 모드다.
+RiskEngine이 위험 판단의 주체다. Radar Collection IPE가 MQTT로 radar CIN을 만들고, 운영 엔진은 radar와 설정된 `fusedTracks/la`를 HTTP polling으로 읽는다. 엔진은 HTTP로 `events`와 `/grp-safezone-alarms/fopt`에 판단 결과를 기록한다. 그룹 기록은 forklift·worker·zone 세 alert CNT에 fan-out됐고, 작업자 ESP의 DANGER 위험 모드를 확인했다. 녹화 시연에서는 SG90 모형 포크 정지도 보여 준다. zone alert CNT는 논리적 확장 대상이며 이 빌드에 물리 경광등은 연결되어 있지 않다.
 
 SUB 경로는 두 형태다. Forklift SUB는 HTTP `/notify` 주소를 직접 보유한다. Worker SUB는 `nu=Cworker01`을 사용하고, CSE가 작업자 AE의 `poa`로 주소를 확인한다. Worker AE를 다시 등록하면 alert CNT의 RI가 달라질 수 있으므로 그룹 `mid`도 현재 RI로 갱신해야 한다. 이번 점검에서는 갱신된 그룹 멤버십과 작업자 ESP의 위험 모드 진입을 확인했다.
 
 현재 ACP 조회에서 radar 읽기, fusedTracks 읽기, alert 작성 권한이 구성된 것을 확인했다. Worker ACP는 `CAdmin`에도 create/retrieve/discovery 권한(마스크 35)을 부여한다. 이는 권한 구성이 존재한다는 확인이며, 최소 권한 보안 검토를 통과했다는 뜻은 아니다.
 
-VisionAI는 C270에서 새 출력을 만들었고 `fusedTracks` CIN의 `cam_ok=true`를 확인했다. 당시 `tracks`는 비어 있어, 그 실행은 카메라 인식·출력 생성과 RiskEngine의 fresh 입력 경로를 확인한 것이며 사람 검출 성공 사례는 아니다. 뒤이은 Pi 조회 시에는 Vision 프로세스가 실행 중이지 않았고 최신 CIN은 약 13분 전이어서 엔진이 `vision=stale`로 판단했다. 즉, Vision 출력은 시험 중 fresh였으나 이번 점검 전체 시간 동안 계속 fresh였던 것은 아니다.
+녹화 시연에서는 카메라와 레이더가 같은 사람을 confirmed로 연결했고, 쭈그린 자세 신호가 WARNING을 DANGER로 올렸다. 별도 시연에서 VisionAI 중단과 레이더 입력 만료도 확인했다. 이전 18:45 조회 당시의 오래된 Vision 상태 및 빈 tracks 관찰은 그 시점의 스냅샷이며, 이후 시연의 양성 사람 검출 결과를 대체하지 않는다.
 
 | 구성 | 후속 확인 | 범위와 한계 |
 |---|---|---|
-| Pi 프로세스 | MN-CSE, Mosquitto, radar uploader, polling RiskEngine, bridge, dashboard, MEC IPE 실행 중 | SSH/systemd를 읽어 확인. 재부팅 복구는 별도 미검증 |
+| Pi 프로세스 | MN-CSE, Mosquitto, radar uploader, polling RiskEngine, bridge, MEC IPE 실행 중. Pi dashboard는 임시 로컬 화면 | 노트북 대시보드가 시연 관제 화면 |
 | 위험 이벤트 | DANGER, WARNING, SAFE 이벤트 기록 및 HTTP 201 / RSC 2001 응답 관찰 | 임계값은 팀 시연 설정이며 안전 성능 인증이 아님 |
 | 경보 경로 | 경보 그룹 현재 멤버 3개, 세 alert CNT 모두 DANGER, worker SUB/AE/그룹 RI 연결 | 작업자 ESP가 위험 모드 진입. 자동 지게차 정지는 확인하지 않음 |
-| ESP | 두 ESP 보드 동작 확인 | 후속 복구 보고에서 worker ESP의 DANGER 위험 모드 관찰. 부저·서보의 모든 출력 조합은 확인하지 않음 |
-| Vision | C270 인식, fresh CIN, RiskEngine에서 fresh 입력 확인 | 수동 실행 시 `tracks=[]`; 18:45 스냅샷은 실행 전 stale 상태. 상시 실행 미검증 |
-| MEC/IPE | MEC 서비스 상태 IPE 실행 및 Vision 상태 자원 기록 경로 확인 | MEC 기여는 상태 가시성. 외부 MEC 플랫폼에서 추론 실행이나 지연 개선은 측정하지 않음 |
-| IN·대시보드 | 브리지의 노트북 Docker IN 기록과 MN/IN 대시보드 연결 확인 | 브리지는 별도 HTTP 앱이며 직접 Mcc 동기화가 아님 |
+| ESP·모형 포크 | 경보 fan-out, worker DANGER mode, 녹화 시연의 SG90 모형 포크 정지 확인 | 실제 지게차 주행 모터 제어가 아님 |
+| Vision | same-person confirmed, 쭈그린 자세에 따른 WARNING→DANGER, VisionAI 중단 사례 확인 | 카메라 자동 부팅은 별도 설정이며 시연 중 연속 실행과 구분 |
+| MEC IPE | Vision freshness와 cam_ok를 읽고 MN-CSE 상태 리소스에 기록 | ETSI MEC011 서비스 발견과는 별도 기능 |
+| 관제 경로 | Pi MN-CSE의 Mcc 등록, 브리지의 노트북 IN 기록, 노트북 대시보드 조회 확인 | 이벤트 이력은 브리지 HTTP/Mca 전달이며 CSE 간 직접 동기화가 아님 |
 | 시연 타이밍 | stale 입력 5초, target association 간격 5초 설정 확인 | 팀 데모 설정; 최적값·추적 정확도 검증 아님 |
 
-### 18:45 이후 장비 복구 보고
+### 장비 복구와 시연 후속 확인
 
 worker AE 재등록으로 변경된 worker alert CNT RI를 현재 경보 그룹에 다시 연결했다. DANGER가 forklift·worker·zone alert CNT 각각에 기록되고 worker ESP가 위험 모드에 들어가는 것을 확인했다. 두 ESP 보드가 동작한다는 보고를 받았지만, 이 후속 보고에서 직접 관찰한 ESP 출력은 worker 위험 모드다. SG90 포크 서보와 부저의 실제 동작은 11월 15일·18일에 수행한 모형 시험 결과로 별도 취급한다.
 
-C270은 Pi에서 인식됐다. VisionAI를 `/home/user/vision4iot` 실행 환경에서 수동 시작해 fresh `fusedTracks`를 만들고 RiskEngine이 이를 fresh로 읽는 것을 확인했다. 당시 `tracks`는 비어 있었다. 이는 카메라 입력과 전달 경로 확인이며 양성 사람 검출이나 systemd 상시 실행 확인은 아니다. 18:45 스냅샷의 stale Vision은 이 수동 실행 전 상태다.
+C270은 Pi에서 인식된다. 시연에서는 `/home/user/vision4iot` 환경의 VisionAI가 새 `fusedTracks`를 만들고 RiskEngine이 이를 fresh로 읽었다. 카메라·레이더가 같은 사람을 confirmed로 연결했고, 쭈그린 자세에 따른 `vision_risky_posture_raise`가 WARNING을 DANGER로 올렸다. 시연 중 프로세스는 실행됐으며 부팅 자동 시작 여부는 별도 배포 설정이다.
 
-Pi에도 IN-CSE 서비스가 있지만 브리지와 대시보드는 노트북 Docker IN-CSE를 사용한다. DHCP 주소 예약은 아직 구성하지 않았다. 아래 11월 17일 격리 시험은 모의 입력과 시험 CNT를 사용한 별도 기록이며 운영 장치 검증과 혼합하지 않는다.
+시연에서 MN-CSE는 노트북 Docker IN-CSE에 등록됐다. 이벤트 이력은 별도 bridge AE가 HTTP/Mca로 전달하고, 노트북 대시보드가 MN 현재 상태와 IN 이력을 조회한다. Pi 안의 임시 대시보드는 시스템 아키텍처에 포함하지 않는다. 11월 20일 점검 당시 DHCP 주소 예약은 구성되지 않았다. 아래 11월 17일 격리 시험은 모의 입력과 시험 CNT를 사용한 과거 기록이다.
 
 ## 문서 범위
 
@@ -76,7 +79,7 @@ flowchart LR
   UP -. "radar CIN 생성<br/>실행 버전·방식 확인 필요" .-> RAD["tinyIoT MN-CSE<br/>radar CNT"]
   RAD -. "모의 radar CIN · Pi MN에서 MQTT 알림" .-> ENGINE["RiskEngine<br/>거리 · 2D CPA"]
   ENGINE -. "MQTT events CIN<br/>Pi 시험 CNT" .-> EVENT["events CNT"]
-  CAM["카메라"] -. "녹화 영상 시험<br/>C270 실시간 미검증" .-> VISION["Vision AI"]
+  CAM["카메라"] -. "이전 영상 시험<br/>당시 실시간 연결 미확인" .-> VISION["Vision AI"]
   RAD -. "HTTP polling 코드·시험 보고<br/>PR #21은 MQTT radar 입력" .-> VISION
   VISION -. "fusedTracks CIN<br/>시험 보고" .-> FUSED["fusedTracks CNT"]
   ENGINE -. "HTTP GET latest fusedTracks/la<br/>radar SAFE일 때만 · Pi 시험" .-> FUSED
@@ -91,7 +94,7 @@ flowchart LR
 
 ### 실제 호출 흐름과 MEC 목표 구조
 
-아래 그림은 현재 확인된 oneM2M 호출 경로와 아직 구현·검증하지 않은 MEC011 연동 목표를 구분한다. LD2450은 oneM2M 장치가 아니며 Pi의 Radar Collection IPE/MN-AE에 UART로 연결된다. C270은 USB로 VisionAI에 연결된다. MEC service-health IPE는 VisionAI의 출력 상태만 읽고 camera stream을 처리하지 않는다.
+아래 그림은 현재 확인된 oneM2M 호출 경로와 MEC011 연동 후속 단계를 구분한다. LD2450은 oneM2M 장치가 아니며 Pi의 Radar Collection IPE/MN-AE에 UART로 연결된다. C270은 USB로 VisionAI에 연결된다. MEC IPE는 VisionAI의 출력 freshness와 카메라 상태를 읽어 MN-CSE에 기록한다. MEC011 서비스 발견·등록을 직접 수행하는 경로와는 구분한다.
 
 ```mermaid
 flowchart LR
@@ -108,7 +111,7 @@ flowchart LR
     GRP["grp-safezone-alarms<br/>/fopt"]
     FA["Forklift alert CNT"]
     WA["Worker alert CNT"]
-    ZA["Zone alert CNT<br/>extension; no device"]
+    ZA["Zone alert CNT<br/>logical extension; no beacon"]
     MN --> RR
     MN --> VF
     MN --> EV
@@ -121,31 +124,33 @@ flowchart LR
     GRP -->|"fopt fan-out · verified for three alert CNTs"| FA
     GRP --> WA
     GRP --> ZA
-    IPE["Vision service-health IPE<br/>reads state only"]
+    IPE["MEC IPE<br/>Vision freshness / cam_ok"]
     IPE -->|"Mca · GET fusedTracks health / POST status"| MN
     BR["MN→IN bridge AE"]
     MN <-->|"Mca · HTTP polling"| BR
-    IN["Laptop Docker IN-CSE"]
-    BR -->|"Mca · HTTP event summary create"| IN
-    DASH["Dashboard"]
-    DASH -->|"Mca · MN current state"| MN
-    DASH -->|"Mca · IN event history"| IN
   end
+
+  IN["Laptop Docker IN-CSE"]
+  BR -->|"Mca · HTTP event summary create"| IN
+  MN -->|"Mcc · CSE registration"| IN
+  DASH["Notebook dashboard"]
+  DASH -->|"Mca · MN current state"| MN
+  DASH -->|"Mca · IN event history"| IN
 
   MEC["ETSI MEC Platform<br/>target integration"]
   MN -.->|"Mp1 · MEC011 service registration / discovery<br/>target; not live-verified"| MEC
   FE["Forklift ESP<br/>servo + buzzer"]
   WE["Worker ESP<br/>buzzer + LED"]
-  FA -->|"Mca · SUB HTTP /notify<br/>fork/servo demo test"| FE
+  FA -->|"Mca · SUB HTTP /notify"| FE
   WA -->|"Mca · SUB nu=Cworker01 → AE poa<br/>DANGER mode observed"| WE
   F["Fork actuator: SG90 servo<br/>on scale-model fork"]
   FE --> F
   KEY["Solid = deployed path or dated test<br/>Dotted = target / not verified"]
 ```
 
-현재 RiskEngine은 MQTT radar notification을 구독하지 않는다. Radar Collection IPE가 MQTT로 CIN을 만들고, 별도 설치본 RiskEngine은 radar와 설정된 `fusedTracks/la`를 HTTP polling으로 읽어 `events`와 경보 그룹에 HTTP로 쓴다. 그룹 fan-out으로 세 alert CNT 모두에 DANGER가 기록됐고, 복구된 worker AE의 새 alert RI를 그룹에 다시 연결한 뒤 작업자 ESP가 위험 모드에 들어가는 것을 확인했다. Forklift ESP의 servo+buzzer 출력은 앞선 11월 15일·18일 모형 시험에서 보고됐으며, 이는 실제 차량의 주행 모터 제어가 아니다.
+운영 RiskEngine은 MQTT radar notification을 구독하지 않는다. Radar Collection IPE가 MQTT로 CIN을 만들고, 별도 설치본 RiskEngine은 radar와 설정된 `fusedTracks/la`를 HTTP polling으로 읽어 `events`와 경보 그룹에 HTTP로 쓴다. 그룹 fan-out으로 세 alert CNT 모두에 DANGER가 기록됐고, 복구된 worker AE의 새 alert RI를 그룹에 다시 연결한 뒤 작업자 ESP가 위험 모드에 들어가는 것을 확인했다. SG90은 실제 지게차 주행 모터가 아니라 모형 포크를 움직인다.
 
-MN→IN 이력 이동은 브리지 AE가 MN을 HTTP polling하고 노트북 Docker IN에 HTTP로 생성 요청을 하는 두 Mca 구간이다. 직접 Mcc 동기화가 아니다. tinyIoT MN-CSE는 Pi의 edge 서비스다. 대회 참조 그림에서 이를 MEC App 역할로 대응해 표기했지만, 실제 ETSI MEC 플랫폼과의 Mp1/MEC011 서비스 등록·발견은 이 배치에서 연결하거나 검증하지 않았다. 실제 실행 중인 MEC 관련 기능은 Vision 출력의 신선도·카메라 상태를 읽어 oneM2M 상태 리소스로 기록하는 IPE다.
+MN-CSE는 노트북 IN-CSE에 Mcc로 등록된다. 이 등록 관계는 이벤트 복사 경로와 별도다. MN→IN 이벤트 이력 이동은 브리지 AE가 MN을 HTTP polling하고 노트북 Docker IN에 HTTP/Mca로 요약 CIN을 생성하는 흐름이다. 노트북 대시보드는 MN 현재 상태와 IN 이력을 조회한다. Pi 임시 대시보드는 시스템 아키텍처에서 제외했다. 실제 실행 중인 MEC 관련 기능은 Vision freshness와 cam_ok를 읽어 oneM2M 상태 리소스로 기록하는 MEC IPE다. ETSI MEC 플랫폼의 Mp1/MEC011 서비스 발견·등록은 다음 연동 단계다.
 
 #### 등록 및 리소스 사전조건
 
@@ -155,9 +160,9 @@ MN→IN 이력 이동은 브리지 AE가 MN을 HTTP polling하고 노트북 Dock
 
 #### 관제 경로 확인
 
-[main의 대시보드 서버](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/blob/e851fbf8ea7407f7614512da73b7fdf3dd30513d/dashboard/server.py)는 기본적으로 `DASH_CSE_BASE`의 `TinyIoT-MN`에서 `radar`, `events`, `fusedTracks`, `alert`의 최신 CIN을 읽는다. 선택 설정 `DASH_IN_BASE`는 CSEBase 접속 확인용이다. 서버는 기본 `CAdmin`으로 GET 요청을 보내며 자체 AE 등록을 수행하지 않는다. 브라우저는 대시보드 서버의 `/api/*`를 조회한다.
+[대시보드 서버](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/blob/e851fbf8ea7407f7614512da73b7fdf3dd30513d/dashboard/server.py)는 `DASH_CSE_BASE`의 MN-CSE에서 현재 radar·events·fusedTracks·alert 상태를 읽는다. 시연에서는 노트북에서 이 값을 조회하도록 `DASH_CSE_BASE`를 Pi MN으로, `DASH_IN_BASE`를 노트북 Docker IN으로 설정해 이력을 읽는다. 서버는 기본 `CAdmin`으로 GET 요청을 보내며 자체 AE 등록을 수행하지 않는다. 브라우저는 대시보드 서버의 `/api/*`를 조회한다.
 
-IN을 데이터 원본으로 쓰려면 선택한 전달 방식과 각 활성 조회 경로에서 실제 CIN을 읽을 수 있는지 확인해야 한다. 기본 서버는 네 가지 경로를 같은 `DASH_CSE_BASE`에 요청하므로 events 하나만 IN에 제공하면 나머지 경로의 데이터는 별도로 구성해야 한다. [대시보드 PR #12](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/pull/12)의 시험 보고 범위는 가짜 CSE이며 실제 Pi 통합은 미확인이다.
+대시보드에서 IN을 읽는 것은 event-history path이며, IN이 radar·fusedTracks·alert를 대신 제공하는 구성은 아니다. Pi bridge가 MN events를 별도 요약 CIN으로 IN에 만든다. [대시보드 PR #12](https://github.com/extra-7ex/Sejong_4IoT_OneM2M/pull/12)의 과거 단위시험은 가짜 CSE를 사용했고, 현재 Pi·노트북 시연 경로는 위의 실장비 상태와 구분해 기록한다.
 
 #### MEC 가용성 확인 기준
 
@@ -246,15 +251,15 @@ Vision은 `AE-VisionAI/fusedTracks`에 결과를 기록하는 코드가 있다. 
 
 | 구간 | 확인된 내용 | 남은 확인 |
 |---|---|---|
-| LD2450 → Pi | UART 직접 연결은 현태의 설명. 실제 현장 전체 연결 시험으로 확대 해석하지 않는다. | 실제 배선·작동 중 업로더 버전·CIN 연속 기록 |
-| radar → MN | `main`의 Pi 업로더는 기본 MQTT로 발행하며 유효한 빈 프레임도 업로드를 시도한다. MQTT 생성·HTTP 조회의 Pi 시험은 팀 보고다. | 실제 설치 버전, MQTT 응답, 빈 CIN 도착과 전송 주기 |
-| radar → RiskEngine → events | Pi ARM64의 실제 MN-CSE·Mosquitto와 별도 CNT에서 모의 radar CIN → MQTT SUB 알림 → 거리·CPA 판정 → MQTT events CIN을 시험했다. 생성 응답 `rsc=2001`과 CIN 조회를 확인했다. | LD2450 업로더에서 생성한 실제 CIN·연속 전송, 실제 입력 주기와 stale 설정 |
+| LD2450 → Pi | LD2450 UART 입력과 Pi radar uploader의 동작을 실제 시연에서 사용 | 센서 설치 오차와 실제 작업장 추적 성능 |
+| radar → MN | Radar Collection IPE가 MQTT로 live radar CIN을 MN-CSE에 생성 | 입력 간격은 시연 환경 기준 |
+| radar → RiskEngine → events | RiskEngine이 최신 radar CIN을 HTTP polling하고 거리·CPA 판정을 events에 HTTP로 기록 | 2.5/1.5 m 임계값과 5초 freshness는 팀 시연 설정 |
 | MQTT notification → RiskEngine → events | PR #14의 MQTT 입력·events 작업본을 기반으로 Pi 시험을 다시 했다. SUB 알림 처리와 MQTT events 생성 응답·저장을 확인했다. | 표준 SUB 검증 응답, 재접속·복구 및 다른 tinyIoT 버전 호환 |
-| Vision | PR #9·#21은 Vision 입력과 MQTT radar 입력을 다룬다. RiskEngine은 Pi의 별도 CNT에 넣은 모의 fusedTracks를 SAFE 판정 때 HTTP GET했다. `camera_only + raise`의 WARNING 상향과 raise 없는 SAFE 유지를 확인했다. | VisionAI 실제 fusedTracks 생성·신선도·표적 연결을 RiskEngine에 연동 |
-| MN ↔ IN | Pi MN과 노트북 IN의 CSE 연결 성공이 보고됐다. 별도 Pi 내부 IN 시험도 보고됐다. | 어떤 서버·이름·ID인지와 등록, 원격 조회, 실제 `events` 전달을 각각 검증 |
-| MN/IN → 관제 | 대시보드는 기본 MN 최신 CIN 조회와 선택적 IN 접속 확인을 구현한다. 가짜 CSE 기반 단위 테스트 4개를 확인했다. | 실제 Pi 데이터 조회, IN을 통한 관제 데이터 조회 |
-| MEC 서비스 발견 및 가용성 | PR #16에서 모의 Vision 등록·발견·호출을 시험했다. 중단 후 등록 상태는 ACTIVE로 남았다. | 실제 레이더·Vision의 장애 감지, 상태 CIN 기록과 판정 전환 |
-| alert → ESP | RiskEngine의 MQTT alert CIN을 Pi 시험 CNT에 기록하고, MQTT 관찰 구독자가 SUB 알림을 받았다. | 설치 펌웨어의 SUB/nu, 실제 ESP CIN 수신, LED·부저 동작 및 운영 ACP |
+| Vision | 녹화 시연에서 camera와 radar가 같은 사람을 confirmed로 연결했고, crouching 자세가 WARNING을 DANGER로 올렸다. VisionAI 중단도 시연했다. | 부팅 자동 시작과 장시간 가용성 |
+| MN-CSE ↔ IN-CSE | Pi MN이 노트북 Docker IN에 Mcc로 등록 | 등록과 이벤트 복사는 별도 경로 |
+| events → IN → 관제 | Pi bridge AE가 HTTP/Mca polling·summary create로 이벤트를 복사하고 노트북 dashboard가 MN 상태·IN 이력을 조회 | DHCP 주소 예약은 별도 구성 |
+| MEC IPE | Vision freshness와 cam_ok를 MN-CSE 상태 resource로 기록 | ETSI MEC011 service discovery/registration은 다음 단계 |
+| alert → ESP·모형 | /fopt fan-out으로 세 alert CNT에 DANGER가 기록되고 worker ESP 위험 모드를 확인. 영상에서 SG90 모형 포크 정지를 시연 | 실제 지게차 주행 모터 제어가 아님 |
 
 상희의 MQTT 시험 보고는 RAM에 둔 DB 복사본에서 330건 중 325건의 생성 성공 응답을 확인했다. 5건의 실패 또는 응답 누락 원인은 미확인이다. 같은 보고의 SD카드 DB 약 1.6초/건은 별도 환경의 관찰이며 일반적인 지연 또는 성능 보장값이 아니다. 1초 데이터 만료 기준과 실제 CIN 수신 간격은 재측정이 필요하다.
 
@@ -264,17 +269,17 @@ Vision은 `AE-VisionAI/fusedTracks`에 결과를 기록하는 코드가 있다. 
 - Vision의 fusedTracks x·y·`dist_m`은 m, `ttc_s`는 초라는 현재 코드 가정이다. 실제 설치 시 센서의 원점·축 방향·보정과 시간 기준을 확인한다.
 - RiskEngine은 현재 거리와 같은 표적으로 연결한 연속 좌표의 변화로 상대속도·2D CPA를 계산한다. `t_cpa`는 최근접 시각이지 위험 반경에 처음 들어가는 시각이 아니며, 현재 속도 유지 조건의 예측이다. Vision의 거리/접근속도 `ttc_s`와 동일시하지 않는다.
 - 위험 반경·거리·시간 임계값은 시험 가설이다. 센서 오차, 회전하는 레이더 좌표계, 센서 설치 오프셋 및 지게차 실제 크기는 추가 검토가 필요하다.
-- 기존 GitHub MVP는 시작 시 오래된 `radar/la`를 새 입력으로 받아들일 수 있다. 별도 엔진 작업본은 첫 CIN을 기준점으로 기억하고 다음 CIN을 기다린다. 현재 Pi 업로더는 유효한 빈 프레임도 전송을 시도한다. 실제 MN에 빈 CIN이 계속 도착하는지, 프레임 중단 시 UNKNOWN으로 전환하는지 확인한다.
+- Pi 시연에서는 radar 프레임이 멈춘 뒤 UNKNOWN과 모형 포크 정지를 확인했다. 사람이 표적 범위를 벗어난 뒤 유효한 빈 프레임이 이어질 때 SAFE로 복귀하는 조건, 다중 표적 교차·가림 시 슬롯 연속성, 실제 장착 오프셋은 후속 추적 항목이다.
 
 ## 실패와 장애 처리
 
 | 상황 | 현재 확인 및 미결 사항 |
 |---|---|
-| 입력 누락·오래된 CIN | 엔진의 기존 stale 정책은 UNKNOWN이다. 최근 별도 작업본의 최초 CIN 보류 정책은 실제 장비 미검증. |
+| 입력 누락·오래된 CIN | 녹화 시연에서 radar 입력이 멈추면 UNKNOWN으로 전환되고 SG90 모형 포크가 정지했다. |
 | MN → IN 연결 실패 | 기존 MN 코드에는 시작 시 IN 등록 실패로 부팅이 중단되는 경로가 있다. IN 장애 중 MEC 로컬 기능 유지와 재연결은 팀 논의 중이다. 독립 시험에서는 등록을 생략했으므로 이 정책을 검증하지 않았다. |
 | 통지 확인·재전송 | MQTT 시험 tinyIoT는 직접 `m2m:sgn` 형태의 검증 알림을 발행했고 별도 수신 응답 없이 SUB를 생성했다. 표준적인 검증 응답 처리, 중복·유실·재연결은 추가 검증이 필요하다. |
 | 이벤트 저장 지연·timeout | 응답 timeout 뒤에도 CIN이 생성된 사례가 있다. 중복 방지와 저장 여부 확인, 재처리 정책이 필요하다. |
-| MEC 서비스 장애 | 등록 상태와 실제 API 응답·입력 신선도를 각각 확인한다. Vision 중단 시 신선한 레이더로 판단을 유지하는 목표 동작과 상태 전달은 실장비 미검증이다. |
+| VisionAI 중단 | VisionAI 중단 사례를 녹화 시연에 포함했다. MEC IPE는 출력 freshness와 cam_ok를 상태 resource로 표시한다. |
 | RiskEngine·Pi·Wi-Fi 장애 | 엔진이 멈추면 새 판정을 기록할 수 없다. 장치 측 무신호 동작, 별도 인터락, 통신 복구 및 재가동은 미확정이다. |
 
 `LOCAL_DECISION`은 레이더 노드의 임시 alert 작성 로직이며, 네트워크에 의존하지 않는 직접 모터 정지 인터락의 구현·검증 근거가 아니다. 기존 ESP 펌웨어의 `warn`/`danger` 이외 표시 및 부팅 시 LED 동작도 합의된 안전 정책이 아니다.

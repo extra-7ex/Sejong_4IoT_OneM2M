@@ -16,7 +16,9 @@ def _env_float(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class RiskConfig:
-    # 지게차 노드(radar_node.py WARN_MM·DANGER_MM)와 같은 기준. 관제 화면과 실제 정지가 어긋나지 않게 한다.
+    # Planning thresholds: WARNING 3.0 m / DANGER 1.5 m.
+    # The recorded Pi demo overrode WARNING to 2.5 m; DANGER stayed 1.5 m.
+    # Source defaults below are an MVP profile, not validated safety limits.
     warning_distance_m: float = 1.0
     danger_distance_m: float = 0.5
     warning_ttc_s: float = 3.0

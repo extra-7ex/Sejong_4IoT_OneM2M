@@ -12,70 +12,71 @@ A Pi-based forklift model combines radar and camera inputs with oneM2M alerts, w
 
 ## Story field — paste only the sections below
 
-### The problem and who we build for
+### Hook
 
-Forklift traffic often shares work areas with pedestrians, and visibility can be limited by the truck, its load, and the aisle layout. In a September 2025 fatality alert, South Korea’s Ministry of Employment and Labor listed three forklift-related deaths reported within two weeks. One worker was killed after being caught between a parked truck and a reversing forklift. OSHA’s forklift guidance also notes that driver visibility can be limited by blind spots and recommends visibility aids such as spotters. These reports describe the hazard; they do not show that a sensor prototype alone can prevent such incidents. ([Ministry of Employment and Labor, 18 Sep 2025](https://www.moel.go.kr/local/jinju/news/notice/noticeView.do?bbs_seq=20250900815); [OSHA pedestrian-traffic guidance](https://www.osha.gov/etools/powered-industrial-trucks/workplace/pedestrian-traffic))
+SafeZone combines radar, camera-based pose analysis, and oneM2M alerts to demonstrate how a forklift safety system can warn a worker and stop a scale-model fork. Its recorded demo follows four cases: changing distance, camera–radar confirmation and posture risk, camera-AI loss, and radar loss.
 
-SafeZone is aimed at warehouse and manufacturing-site safety teams where forklifts and pedestrians share aisles. The prototype explores two complementary cues: radar sensing that does not depend on a worker carrying a tag, and a wearable worker tag that can receive its own warning.
+### The problem
 
-### What SafeZone does
+Forklift traffic often shares work areas with pedestrians, while the truck, its load, and aisle layout can limit visibility. In a September 2025 fatality alert, South Korea’s Ministry of Employment and Labor listed three forklift-related deaths reported within two weeks; one worker was caught between a parked truck and a reversing forklift. OSHA also notes that visibility can be limited by blind spots and recommends aids such as spotters. ([Ministry of Employment and Labor, 18 Sep 2025](https://www.moel.go.kr/local/jinju/news/notice/noticeView.do?bbs_seq=20250900815); [OSHA pedestrian-traffic guidance](https://www.osha.gov/etools/powered-industrial-trucks/workplace/pedestrian-traffic))
 
-SafeZone is an edge-IoT prototype built around a Raspberry Pi and a 3D-printed forklift model. The LD2450 watches the model’s rear blind spot. VisionAI processes a Logitech C270 camera, and the RiskEngine evaluates the available radar and configured Vision data into SAFE, WARNING, DANGER, or UNKNOWN states. oneM2M stores sensor data and events and routes alert state to the model’s alarm node and worker tag.
+SafeZone is a prototype for warehouse and manufacturing teams exploring ways to add a warning layer where forklifts and pedestrians share space. Radar can detect without requiring a worker to carry a tag; the wearable tag adds a direct alert channel.
 
-The forklift alarm node controls an SG90 servo and buzzer. In the dated model tests below, WARNING kept the fork moving with a slower beep, while DANGER stopped the fork and sounded a faster alarm. The worker tag provides a separate buzzer-and-LED warning. The servo moves the scale model’s fork; it does not control a full-size forklift’s drive motor.
+### How SafeZone works
 
-### Model and system architecture
+![SafeZone architecture and verified call flow](safezone-architecture.svg)
 
-![SafeZone verified call flow and MEC011 target](safezone-architecture.svg)
+An LD2450 radar connects to a Raspberry Pi over UART. A radar-collection IPE writes radar content instances (CINs) to the Pi’s tinyIoT MN-CSE over the oneM2M MQTT binding. A Logitech C270 connects to VisionAI over USB; VisionAI writes `fusedTracks` CINs to the same CSE over HTTP. The RiskEngine polls the latest radar and Vision data over HTTP, records decisions in `AE-riskengine/events`, and sends alert state to `grp-safezone-alarms/fopt`.
 
-The LD2450 connects to the Pi radar-collection IPE/MN-AE over UART. The uploader creates radar content instances (CINs) in the tinyIoT MN-CSE using MQTT. The C270 connects to VisionAI over USB; VisionAI writes `fusedTracks` CINs over HTTP. The RiskEngine polls the latest radar and configured Vision CINs over HTTP, then writes `events` and posts the alert state to `grp-safezone-alarms/fopt` over HTTP.
+Three design choices shape the response:
 
-The current resource paths include `AE-forklift01/radar`, `AE-VisionAI/fusedTracks`, and `AE-riskengine/events`. The alarm group contains three alert containers: forklift, worker, and zone. A group `/fopt` write was verified to put DANGER in all three. The worker AE registers as `AE-worker01` with the `type:worker-alarm` label; its subscription uses `nu=Cworker01`, resolved through the AE’s point of access. The forklift subscription stores an HTTP `/notify` URL directly. Both device notification routes use Mca over HTTP.
+1. **Radar provides the distance signal.** The current demo profile uses WARNING at 2.5 m and DANGER at 1.5 m.
+2. **Vision can raise risk, never lower it.** A posture cue can raise WARNING to DANGER; camera evidence does not clear a radar warning.
+3. **Radar loss fails safe on the model.** When radar data expires, the RiskEngine reports UNKNOWN and the scale-model fork moves to its stop position.
 
-Re-registering the worker AE created a new alert-container resource ID, so we restored that ID in the group’s `mid` list before retesting. The worker ACP currently gives `CAdmin` create, retrieve, and discovery permissions (mask 35); a least-privilege review remains open.
+### Four cases in the demo
 
-For history, a bridge AE polls events from the Pi MN-CSE and creates summaries in an IN-CSE running in Docker on a laptop. The dashboard reads current state from MN and event history from IN. The bridge uses HTTP/Mca calls to each CSE; it does not use a direct Mcc synchronization path. A separate local IN-CSE service also runs on the Pi but was not the bridge target in the 20 November deployment check.
+| Case | Input shown | Observed result |
+|---|---|---|
+| A — Distance stages | A radar target moves through the configured distance bands. | SAFE, WARNING, and DANGER states follow the demo thresholds; the model responds to the alert state. |
+| B — Camera–radar fusion | VisionAI and radar confirm the same person. A crouched posture is then detected. | Risk rises from WARNING to DANGER with reason `vision_risky_posture_raise`. |
+| C — Camera-AI interruption | VisionAI is stopped while the radar path remains available. | The camera adds no new evidence; loss of camera input does not lower an existing radar risk state. |
+| D — Radar interruption | Radar updates stop and the input becomes stale. | State changes to UNKNOWN and the scale-model fork moves to its stop position. |
 
-### Edge software and MEC role
+### oneM2M under the hood
 
-The Pi runs the radar uploader, RiskEngine, bridge, dashboard, and a service-health IPE. The IPE reads Vision freshness and `cam_ok`, then writes health state to oneM2M. It monitors Vision output; it does not process camera frames or make the risk decision. VisionAI itself uses Ultralytics YOLO pose inference and OpenCV.
+SafeZone keeps sensor data, events, alerts, and subscriptions in oneM2M resources. The main paths are `AE-forklift01/radar`, `AE-VisionAI/fusedTracks`, and `AE-riskengine/events`. The worker AE registers with the `type:worker-alarm` label; label discovery lets the system find its alert resource without hard-coding the resource name. Its SUB uses `nu=Cworker01`, which the CSE resolves through the AE’s point of access. The forklift SUB stores an HTTP `/notify` endpoint directly.
 
-The live Pi build did not verify an ETSI MEC platform performing Mp1/MEC011 service registration or discovery, and no MEC latency improvement was measured. In the architecture figure, the MN-CSE is mapped to the MEC App role in the competition reference diagram; the dotted Mp1/MEC011 link is a target integration.
+A single write to the group fan-out point `/grp-safezone-alarms/fopt` was recorded in all three alert containers: forklift, worker, and zone. The worker ESP entered DANGER mode. The zone alert container is a configured expansion point; this build has no physical zone beacon attached.
+
+The Pi MN-CSE is registered with the laptop’s Docker IN-CSE over Mcc. Event-history transfer is a separate bridge AE: it polls events from MN and creates summaries in IN using HTTP/Mca. The dashboard reads current state from MN and history from IN. The running MEC IPE reads Vision freshness and cam_ok, then exposes service status through oneM2M. MEC011 service registration and discovery through an ETSI MEC platform are a next step.
 
 ### Hardware build
 
-The model places the LD2450 behind a rear window. The forklift alarm node is a NodeMCU ESP8266 on an HW-389 board, powered by a 9 V battery, with an SG90 fork servo and buzzer. The worker tag is a second NodeMCU in a 3D-printed wearable case with a buzzer and LED window. On boot, its firmware registers its AE, ACP, alert and status containers, and subscription; the tag publishes a 30-second heartbeat. The Pi uses a 5 V, 3 A supply. Portable tests used a USB power bank.
+The prototype uses a 3D-printed forklift model with the LD2450 behind its rear window. A NodeMCU ESP8266 on an HW-389 board, powered by a 9 V battery, drives an SG90 servo on the model fork and a buzzer. A second NodeMCU is housed in a 3D-printed worker tag with a buzzer and LED window.
 
-### Software
+**Hardware:** HLK-LD2450 radar, Raspberry Pi 4B, Logitech C270 USB camera, two NodeMCU ESP8266 boards, SG90 servo, buzzers, 9 V battery, USB power bank, and a 5 V, 3 A power supply for the Raspberry Pi. The USB power bank was used for portable testing.
 
-The radar uploader, RiskEngine, VisionAI, bridge, dashboard, and service-health IPE are Python applications. tinyIoT provides the MN-CSE and IN-CSE, with Mosquitto for the radar MQTT binding; Docker runs the laptop IN-CSE. VisionAI uses Ultralytics YOLO pose inference and OpenCV. The ESP8266 nodes run Arduino firmware.
+The servo moves the model’s fork. It does not control a full-size forklift’s drive motor or provide a certified vehicle interlock.
 
-### Demo and results
+### Software and challenges solved
 
-The recorded demo shows the camera–radar risk path. The following results are from separate 2026 test runs; the settings should not be read as one combined profile.
+**Software:** Python, OpenCV, Ultralytics YOLO, Mosquitto, and Docker. Python runs the Pi-side applications; OpenCV and Ultralytics YOLO power VisionAI pose inference; Mosquitto provides the radar MQTT broker; Docker runs the laptop IN-CSE. The laptop dashboard reads current state from MN and event history from IN, while the ESP8266 nodes run Arduino firmware.
 
-- **15 November:** A team test uploaded radar frames, including empty frames, at about 0.5-second intervals. The HTTP alert-creation-and-notification path was measured at 0.00–0.12 seconds in that short run; the model fork stop and buzzer were observed.
-- **16 November:** The worker-tag test covered automatic AE registration, `type:worker-alarm` discovery, and RiskEngine alert logging.
-- **18 November:** The model alarm test used WARNING at 1.0 m and DANGER at 0.5 m. The reported behavior was a slower warning beep while the fork continued moving, followed by a stopped fork and faster buzzer in DANGER.
-- **19 November:** Registrations and subscriptions were rebuilt over a phone hotspot. The Pi and both ESP nodes registered; the final end-to-end alarm result for that outdoor run was not recorded.
-- **20 November Pi check:** The active RiskEngine used WARNING at 2.5 m, DANGER at 1.5 m, and five-second stale/association settings. The MQTT radar uploader showed 0.30–0.33-second responses at roughly 0.53-second intervals. DANGER was written to all three alert containers, and the worker ESP entered risk mode. The MQTT log and earlier HTTP measurement are from different runs, so they are not a direct performance comparison.
+The radar uploader waits for each MQTT response and skips a new frame while a request is pending, preventing a backlog of older frames. We also restored the worker alert’s current group membership after re-registration assigned its alert container a new resource ID. These fixes keep the live path aligned with the latest sensor frame and active oneM2M resources.
 
-After the equipment was restored, the Pi recognized the C270. VisionAI was started manually from `/home/user/vision4iot`, created a fresh `fusedTracks` CIN, and the RiskEngine read it as fresh. `tracks` was empty in that run: it verified camera availability and the fresh-data path, not a positive person detection. Continuous Vision service operation was not verified.
+### Limitations and next steps
 
-### Lessons and limitations
-
-The MQTT binding is used by the radar uploader; the RiskEngine, Vision output, ESP notifications, and MN-to-IN bridge use HTTP. On the Pi, the uploader waits for each MQTT response and skips new frames while one request is pending, avoiding a backlog of older frames. A separate lesson came from worker registration: a recreated AE may receive a new alert CNT resource ID, and the group membership must be updated to that ID.
-
-The distance and five-second settings are team-selected demo values, not validated safety limits or tracking guarantees. The fresh Vision test had no person tracks, and continuous Vision operation, restart recovery, and long-duration reliability remain unverified. The model demonstrates a servo stop on a scale fork; it is not a certified vehicle interlock or a full-size forklift safety system. The MEC011 platform integration and the hotspot run’s final alarm outcome also remain unverified.
+The 2.5 m / 1.5 m thresholds and five-second freshness settings are team-selected demo values, not validated safety limits or tracking guarantees. Long-duration operation and restart recovery still need testing. The SG90 stop is demonstrated on a scale model, not a full-size vehicle. ETSI MEC011 registration and discovery remain future integration work.
 
 ### Team
 
-The team split work across radar and forklift-model hardware, worker-tag firmware and oneM2M registration, VisionAI and camera calibration, and Pi-side RiskEngine, CSE integration, bridge, dashboard, and service-health reporting.
+The team built the radar and forklift-model hardware, worker-tag firmware and oneM2M registration, VisionAI and camera setup, and the Pi-side RiskEngine, CSE integration, bridge, and service-status reporting.
 
 ## Submission assets — outside the Story field
 
 - Source repository: https://github.com/extra-7ex/Sejong_4IoT_OneM2M/tree/codex/safezone-submission-20261120
-- Add the recorded video in the separate video field and align its date, thresholds, transport, and IN-CSE location with the Story.
+- Add the recorded demo video in Hackster’s separate video field.
 - Select a cover image for the separate 4:3 image field.
-- The SVG above is an architecture figure. Add a photo or annotated view of the physical model if available.
-- No electrical schematic was found in the reviewed project files; use an actual schematic PDF/PNG if the team has one.
+- The circuit diagram has been uploaded as a separate project asset.
+- The SVG above is the architecture figure; add a photo of the physical model if available.

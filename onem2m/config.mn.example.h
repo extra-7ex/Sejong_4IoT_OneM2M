@@ -11,9 +11,10 @@
 #if SERVER_TYPE == MN_CSE
 #define REMOTE_CSE_ID    "id-in"             // 상위 IN의 CSE_BASE_RI
 #define REMOTE_CSE_NAME  "TinyIoT"           // 상위 IN의 CSE_BASE_NAME
-#define REMOTE_CSE_HOST  "127.0.0.1"         // Pi 내부 IN(권장). 노트북 IN이면 "<NOTEBOOK_IP>"
+#define REMOTE_CSE_HOST  "<NOTEBOOK_IP>"      // 시연용 노트북 Docker IN-CSE 주소
 #define REMOTE_CSE_SP_ID "tinyiot.example.com"
-#define REMOTE_CSE_PORT  3001                // Pi 내부 IN. 노트북 IN이면 3000
+#define REMOTE_CSE_PORT  3000                // 노트북 Docker IN-CSE publish port
+// Pi 내부 IN 대안: REMOTE_CSE_HOST "127.0.0.1", REMOTE_CSE_PORT 3001
 #endif
 
 #define ALLOWED_REMOTE_CSE_ID "/id-in,/id-mn"

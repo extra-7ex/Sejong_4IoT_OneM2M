@@ -3,11 +3,11 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
-#include "secrets.h"                                   // WIFI_SSID, WIFI_PASS
+#include "secrets.h"                                   // WIFI_SSID, WIFI_PASS, CSE_HOST
 
 // ===== 설정 =====
-#ifndef CSE_HOST                                        // secrets.h에서 바꾼다 (핫스팟 등 네트워크가 바뀌면 Pi의 새 IP)
-#define CSE_HOST "http://192.168.219.103:3000"
+#ifndef CSE_HOST
+#error "Define CSE_HOST in secrets.h, for example http://<PI_IP>:3000"
 #endif
 const String CSE_NAME = "TinyIoT-MN";
 const String NODE     = "worker01";                     // 작업자 노드를 더 만들면 worker02, worker03 ...
