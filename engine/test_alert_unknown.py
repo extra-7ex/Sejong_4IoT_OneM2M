@@ -30,7 +30,7 @@ class AlertUnknownTest(unittest.TestCase):
         now = [10.0]
         events, alerts = Writer(), Writer()
         engine = RiskEngine(RiskConfig(release_hold_s=0, **LEGACY), clock=lambda: now[0])
-        app = RiskApplication(None, engine, events, alerts)
+        app = RiskApplication(None, engine, events, alerts, wall_clock=lambda: 1)
 
         app.accept_message(radar("a", [{"slot": 0, "x": 1000, "y": 0}]), now[0], dedupe=True)
         self.assertEqual(alerts.calls[-1]["level"], "danger")

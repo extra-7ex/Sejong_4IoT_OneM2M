@@ -110,17 +110,15 @@ class RiskTests(unittest.TestCase):
 
 
 class DemoThresholdTests(unittest.TestCase):
-    """관제 화면(엔진)과 실제 정지(지게차 노드)가 같은 거리 기준을 써야 영상에서 어긋나지 않는다."""
+    """레이더의 로컬 임시 판정과 엔진 설정은 서로 독립적이다."""
 
-    def test_default_thresholds_match_the_forklift_node(self):
+    def test_radar_local_thresholds_are_documented(self):
         import re
         from pathlib import Path
         src = (Path(__file__).resolve().parents[1] / "radar" / "radar_node.py").read_text(encoding="utf-8")
         warn_mm = int(re.search(r"^WARN_MM\s*=\s*(\d+)", src, re.M).group(1))
         danger_mm = int(re.search(r"^DANGER_MM\s*=\s*(\d+)", src, re.M).group(1))
-        config = RiskConfig()
-        self.assertEqual(config.warning_distance_m * 1000, warn_mm)
-        self.assertEqual(config.danger_distance_m * 1000, danger_mm)
+        self.assertEqual((warn_mm, danger_mm), (3000, 1500))
 
     def test_default_distance_levels(self):
         def classify(x_mm):

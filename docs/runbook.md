@@ -122,3 +122,29 @@ curl -s -H 'X-M2M-Origin: CAdmin' -H 'X-M2M-RI: chk' -H 'X-M2M-RVI: 3' -H 'Accep
 - 주요 환경 변수: `IPE_PERIOD_S`(1.0), `IPE_FAIL_N`(3), `IPE_MAX_AGE_S`(2.0), `IPE_HEARTBEAT_S`(10), `IPE_READ_ORIGIN`(CAdmin), `IPE_ORIGIN`(CmecIPE).
 - 시험: `python3 -m unittest onem2m.test_mec_ipe`
 - Pi 시험(2026-11-18, 실제 MN-CSE, `bench_bus.mp4` 녹화 영상으로 돌린 실제 VisionAI 약 5 FPS): 꺼진 상태로 시작하면 2초 뒤 INACTIVE, VisionAI 시작 후 약 10초(모델 로딩 포함) 뒤 ACTIVE. VisionAI를 Ctrl+C로 멈추면 마지막 프레임 4.2–4.7초 뒤 INACTIVE, 다시 켜면 9.7초 뒤 ACTIVE. 같은 Pi에서 VisionAI를 두 개 돌려 약 1.6 FPS로 떨어졌을 때 잘못된 INACTIVE가 1초 동안 한 번 나왔으므로, 프레임이 2초 넘게 끊기는 환경이면 `IPE_MAX_AGE_S`를 늘린다.
+
+### MEC011에서 Vision 데이터 endpoint 발견하기 (선택)
+
+기본 `IPE_PROBE=cin:/AE-VisionAI/fusedTracks/la`는 MN-CSE 주소를 알고 직접 조회한다. MEC011을 경유하려면 Vision 데이터 제공 서비스가 먼저 MEC 서비스 등록부에 등록되어 있어야 한다. `mec_ipe`는 서비스 자체를 등록하지 않는다.
+
+`IPE_PROBE=mec-cin`으로 바꾸면 IPE는 `IPE_MEC_BASE`의 MEC011 `/services?ser_name=...` 조회로 서비스를 찾고, `ACTIVE` 상태와 등록된 endpoint를 확인한 뒤 그 주소로 최신 CIN을 조회한다. endpoint는 `IPE_DISCOVERY_CSE_BASE`에 지정한 CSE 아래의 `/la` URI여야 하며, 비워두면 `IPE_MN_BASE`를 사용한다. 원격 CSE 사용 시 주소와 조회 권한을 미리 설정한다. 중복된 서비스 이름이나 허용한 주소 밖의 endpoint는 사용하지 않는다. MEC 등록부를 읽지 못하면 판정을 보류한다.
+
+IPE가 쓴 `MecServices/<서비스>/status`는 현재 RiskEngine 입력으로 연결되어 있지 않다. MEC 발견 결과가 위험 판정에도 영향을 주게 하려면, 후속으로 엔진이 이 oneM2M 상태를 읽고 `ACTIVE`이며 상태 CIN이 신선할 때만 Vision 조언을 허용하도록 연결한다. 이때 레이더 단독 판정은 계속 유효하게 둔다.
+
+```bash
+IPE_MEC_BASE=http://127.0.0.1:18080/safezone-a/mep-a/mec_service_mgmt/v1 \
+IPE_MEC_SERVICE=<MEC에 등록된 서비스 이름> \
+IPE_PROBE=mec-cin \
+python3 -m onem2m.mec_ipe --once
+```
+
+위 주소는 같은 Pi에서 실행하는 Host A 시험 스택의 로컬 API 예시다. 다른 배치에서는 해당 플랫폼이 제공한 API root를 사용한다. `IPE_MEC_UPDATE`는 기본값 `0`으로 둔다. 이 기능은 MEC 서비스 상태를 자동 갱신하지 않으며, `ACTIVE` 표기만으로 최신 데이터가 있다고 보지 않는다. 실제 `fusedTracks` 데이터의 `ts`와 `cam_ok`를 계속 검사한다.
+
+### Pi ARM64 MEC011 discovery 시험 (2026-11-20)
+
+- Pi의 기존 MEC ARM64 컨테이너 네 개를 재시작했고, 로컬 MEC API와 모의 Vision 응답을 확인했다. 이미지 재빌드나 Redis 데이터 삭제는 하지 않았다.
+- MEC 시험 앱 아래 `safezone-vision-cin-trial`을 별도 등록했다. endpoint는 실제 Pi MN-CSE의 `http://127.0.0.1:3000/TinyIoT-MN/AE-VisionAI/fusedTracks/la`였다.
+- 변경한 IPE 파일을 Pi `/tmp`에서 `--once`로 실행하고 `AE-mecIPE-discovery-trial`에 상태 CIN을 썼다. 확인값은 `probe=mec-cin`, `state=ACTIVE`, `registry_state=ACTIVE`였다. 이는 운영 `safezone-ipe` 설정이나 서비스 코드를 전환한 결과가 아니다.
+- VisionAI는 실제 카메라·레이더 입력으로 잠시 실행해 `cam_ok=true`, 표적 0개, 약 2.1 FPS를 발행했다. 약 82°C에 도달해 중지했고, 온도는 이후 약 65°C로 내려갔다. 시험 상태 CIN 기록은 VisionAI를 중지한 뒤 수행했으므로 시험 실행에서만 `IPE_MAX_AGE_S=600`을 사용했다. 따라서 이 기록의 `fresh` 판정은 기본 2초 신선도 검증으로 해석하면 안 된다.
+- 이후 운영 `safezone-ipe`에 별도 파일과 systemd drop-in으로 `mec-cin`을 적용했다. 실제 VisionAI를 잠깐 실행하자 발견한 CIN이 최신으로 갱신되면서 IPE가 INACTIVE에서 ACTIVE로 바뀌었다. 약 2.1 FPS 상태에서 2초 신선도 기준을 잠깐 넘어 INACTIVE와 ACTIVE로 한 차례 흔들렸다. 시험 후 Vision은 중지했다.
+- MEC 등록은 시험용 앱 아래 수동으로 만들었다. 실제 Vision 앱의 자동 등록, 여러 서비스 선택, MEC 상태 자동 갱신과 장시간 안정성은 미검증이다. 현재 설정과 복구 위치는 [Pi 운영 상태](pi-operating-state.md)를 참고한다.
