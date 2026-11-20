@@ -153,6 +153,16 @@ class InModeTest(unittest.TestCase):
         self.assertEqual(stats["hotspots"][0]["DANGER"], 1)
         self.assertFalse(Path(self.cfg["history_file"]).exists())             # IN 모드는 로컬 파일을 쓰지 않음
 
+    def test_in_mode_can_skip_backfill_and_read_latest(self):
+        self.cfg["in_backfill"] = False
+        store = Store(self.cfg)
+        poller = Poller(self.cfg, store, self.client)
+        latest = self.summary("latest", "WARNING", 100)
+        self.client.responses[self.cfg["in_events_path"] + "/la"] = ("ok", unwrap_cin({"m2m:cin": latest}))
+        with patch.object(self.client, "children", side_effect=AssertionError("backfill was called")):
+            poller.poll_once()
+        self.assertEqual([r["ri"] for r in store.recent(10)], ["latest"])
+
     def test_duplicate_in_copies_of_same_mn_event_shown_once(self):
         a = self.summary("x1", "DANGER", 1.0); a["con"]["mn_ri"] = "mn-7"
         b = self.summary("x2", "DANGER", 1.0); b["con"]["mn_ri"] = "mn-7"

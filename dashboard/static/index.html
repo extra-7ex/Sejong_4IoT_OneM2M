@@ -135,7 +135,7 @@ function setHealth(key, h) {
   const dot = $('h-' + key), txt = $('h-' + key + '-t');
   if (!h) return;
   dot.className = 'dot ' + (h.ok ? 'ok' : 'bad');
-  const name = key === 'mn' && latest?.config?.mn_health_path ? 'MN 조회 경로' : key.toUpperCase() + '-CSE';
+  const name = key === 'mn' && latest?.config?.mn_health_path ? 'MN 조회 경로' : key === 'in' && latest?.config?.in_health_path ? 'IN 조회 경로' : key.toUpperCase() + '-CSE';
   txt.textContent = `${name} ${h.ok ? (h.rn || '') + ' · ' + h.ms + 'ms' : '조회 실패 (' + h.detail + ')'}`;
 }
 

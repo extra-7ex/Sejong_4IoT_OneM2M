@@ -46,6 +46,8 @@ def load_config() -> dict[str, Any]:
         # IN-CSE. 지정하면 연결 상태를 표시하고, 위험 이력을 IN에서 읽는다(IN 모드)
         "in_base": env("DASH_IN_BASE", "").rstrip("/"),
         "in_events_path": env("DASH_IN_EVENTS_PATH", "/AE-safezone/events"),
+        "in_backfill": env("DASH_IN_BACKFILL", "1").strip().lower() in ("1", "true", "yes", "on"),
+        "in_health_path": env("DASH_IN_HEALTH_PATH", ""),
         "mn_health_path": env("DASH_MN_HEALTH_PATH", ""),
         "origin": env("DASH_ORIGIN", "CAdmin"),
         "rvi": env("DASH_RVI", "3"),
@@ -167,7 +169,7 @@ class Store:
         self.events: collections.deque = collections.deque(maxlen=cfg["history_max"])
         self.started = time.time()
         self.in_mode = bool(cfg["in_base"])
-        self.history_loaded = not self.in_mode   # IN 모드는 IN 이력을 불러온 뒤 True
+        self.history_loaded = not self.in_mode or not cfg.get("in_backfill", True)
         self.known_ri: set = set()
         self.fresh = bool(cfg.get("fresh"))
         self.since: Optional[float] = self.started if self.fresh else None   # 이 시각 이전 이벤트는 숨김
@@ -374,7 +376,7 @@ class Poller(threading.Thread):
     def check_health(self) -> None:
         health = {"mn": self.client.health(self.cfg["cse_base"] + self.cfg.get("mn_health_path", ""))}
         if self.cfg["in_base"]:
-            health["in"] = self.client.health(self.cfg["in_base"])
+            health["in"] = self.client.health(self.cfg["in_base"] + self.cfg.get("in_health_path", ""))
         with self.store.lock:
             self.store.health = health
 
@@ -397,7 +399,7 @@ class Poller(threading.Thread):
 def make_handler(store: Store, cfg: dict[str, Any]):
     public_cfg = {k: cfg[k] for k in ("cse_base", "in_base", "in_events_path", "radar_path", "events_path", "fused_path",
                                       "alert_path", "vision_status_path", "vision_status_stale_s",
-                                      "radar_stale_s", "fused_stale_s", "future_skew_s", "mn_health_path",
+                                      "radar_stale_s", "fused_stale_s", "future_skew_s", "mn_health_path", "in_health_path",
                                       "poll_s", "grid_mm")}
 
     class Handler(BaseHTTPRequestHandler):

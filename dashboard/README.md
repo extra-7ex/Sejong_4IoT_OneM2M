@@ -52,11 +52,11 @@ python3 -m dashboard.server --port 8080
 
 요청은 대시보드 → IN의 Mca/HTTP, IN → MN의 Mcc로 전달된다. Pi MN에 별도 시험 AE와 조회 전용 ACP를 만들고 모의 radar, fusedTracks, alert, Vision 상태, events CIN을 생성한 뒤, 기존 대시보드의 `/api/state`가 다섯 값을 모두 IN 경유로 읽는 것을 확인했다. 권한이 없는 원격 식별자는 403/RSC 4103으로 거부됐다. 시험 리소스는 삭제했다.
 
-**운영 전환 전 확인:** 운영 radar 등에는 시험용 원격 식별자 조회 권한이 없으므로 현재 설정을 그대로 바꾸면 403이 발생한다. IN이 `CAdmin` 요청을 `/id-in/CAdmin`으로 전달하는 것을 확인했지만, 운영에는 관제 전용 식별자와 필요한 리소스의 RETRIEVE 권한을 별도로 설계하고 허용·거부를 시험한다. CSEBase 조회가 거부될 수도 있으며, 실제 시험에서 CNT 조회는 성공해도 MN 연결 표시가 HTTP 403으로 나타났다. 운영 ACP는 이 시험에서 바꾸지 않았다.
+**운영 권한 적용(2026-11-21):** 노트북 IN에 관제 AE `Cdashboard`를 만들고, MN의 radar·fusedTracks·events·forklift alert·Vision 상태 및 IN 이력 CNT에 조회 권한을 연결했다. IN이 원격 origin을 `/id-in/Cdashboard`로 전달하며, 다섯 MN CIN과 IN 이력 최신 CIN 조회를 확인했다. 기존 작성자 조회도 확인했지만 실제 새 CIN 작성과 ESP 동작은 이 시험에서 확인하지 않았다. 운영 적용 기록과 복구 방법은 [ACP 적용안](../docs/dashboard-in-acp-plan.md)을 참고한다.
 
 관제 AE에 CSEBase 조회 권한을 별도로 주지 않는 경우 `DASH_MN_HEALTH_PATH=/AE-forklift01/radar/la`를 설정하면 대시보드는 해당 조회 경로의 응답을 확인한다. 화면에는 `MN 조회 경로`라고 표시한다. 이것은 CSEBase 전체 상태를 진단한 결과가 아니다.
 
-위 예제는 `DASH_IN_BASE`를 설정하지 않으므로 이력은 대시보드 로컬 모드다. IN 이력까지 사용하려면 `DASH_IN_BASE`를 별도로 지정해야 하지만, 이 경우 IN 이력 컨테이너에 `rcn=4` 조회를 수행한다. 해당 동작은 사용 중인 IN의 빌드·데이터에서 별도로 검증한다. 이 시험은 이력 불러오기를 실행하지 않았다.
+위 예제는 `DASH_IN_BASE`를 설정하지 않으므로 이력은 대시보드 로컬 모드다. IN 이력을 사용하려면 `DASH_IN_BASE=http://<IN_IP>:3000/TinyIoT`, `DASH_ORIGIN=Cdashboard`, `DASH_MN_HEALTH_PATH=/AE-forklift01/radar/la`, `DASH_IN_BACKFILL=0`, `DASH_IN_HEALTH_PATH=/AE-safezone/events/la`를 추가할 수 있다. 이때 시작 시 과거 이력 전체 조회는 건너뛰고 최신 이력부터 읽는다. `DASH_IN_BACKFILL=1`은 시작 시 `rcn=4` 조회를 수행하므로 현재 IN의 빌드와 데이터에서 별도 검증 전 사용하지 않는다.
 
 이 변경에서는 radar·fusedTracks·IPE 상태의 `con.ts`를 원본 시각으로 사용한다. 지정한 허용 나이를 넘거나 시각이 없고 잘못됐거나 미래로 크게 치우치면 신선하지 않은 것으로 표시한다. 조회가 실패해도 이전 값을 정상으로 취급하지 않는다. 레이더가 신선하지 않거나 events 조회가 실패하면 화면의 현재 판정은 UNKNOWN으로 표시한다. 이 UNKNOWN은 **대시보드 표시 상태**이며 엔진이 새 UNKNOWN 이벤트를 기록했다는 뜻은 아니다.
 
