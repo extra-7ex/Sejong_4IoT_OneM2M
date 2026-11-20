@@ -12,6 +12,8 @@
 
 운영 전환 후 위 세 작성자 보존 ACP를 별도의 무구독 시험 CNT에 연결해 `Criskengine`, `CmecIPE`, `Csafezone` 각각의 CIN CREATE가 HTTP 201 / RSC 2001로 성공했다. 시험 CNT와 AE는 삭제했다. 이는 운영 리소스의 실제 서비스가 새 CIN을 성공적으로 쓰고 있다는 증거는 아니다. 확인 당시 IPE는 MEC 등록부 연결 거부로 상태 갱신을 보류 중이었다.
 
+이후 기존 MEC 컨테이너를 다시 시작한 뒤 IPE가 실제 운영 status CNT에 새 CIN을 기록했고, IN 경유 관제 조회에서 `registry_state=ACTIVE`, 데이터 `state=INACTIVE`와 최신 `ts`를 확인했다. VisionAI가 중지된 상태이므로 실제 영상 데이터는 오래된 상태였다. RiskEngine과 브리지의 운영 CNT 새 쓰기는 별도 확인이 필요하다. MEC 컨테이너의 재시작 정책은 확인 당시 `no`였다.
+
 ## 적용한 정책과 남은 검증
 
 - 노트북 IN에 관제용 AE `AE-dashboard-in`과 AE-ID `Cdashboard`를 등록한다. 두 이름과 ID가 실제로 비어 있는지 적용 직전 재확인한다.
