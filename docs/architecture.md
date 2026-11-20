@@ -42,14 +42,14 @@ SUB 경로는 두 형태다. Forklift SUB는 HTTP `/notify` 주소를 직접 보
 
 촬영 후 `Criskengine` Origin으로 재시작한 RiskEngine은 events 기록 HTTP 201 / RSC 2001을 받았고, forklift·worker·zone alert CNT에 각각 `level=danger`, `dist=1170`인 CIN을 확인했다. 이 재검증은 oneM2M 기록 경로 확인이며, ESP가 알림을 수신했거나 부저·서보가 움직였다는 확인은 아니다. MQTT SUB는 만들거나 변경하지 않았다.
 
-운영 MEC IPE에는 MEC011 발견 코드가 적용됐다. Pi loopback 등록부에 서비스 이름 `safezone-mock-vision`을 수동 등록했고, 그 주소는 실제 `fusedTracks` oneM2M CIN 경로를 가리킨다. VisionAI가 꺼져 있을 때 등록부의 서비스 상태는 `ACTIVE`였지만 데이터 신선도 상태는 `INACTIVE`였다. VisionAI를 잠시 실행하자 IPE가 발견한 주소에서 실제 최신 데이터를 읽고 데이터 상태를 `INACTIVE → ACTIVE`로 갱신했다. 시험 뒤 VisionAI는 다시 껐다. 등록 상태 `ACTIVE`만으로 실제 데이터가 신선하다고 판단할 수 없다.
+운영 MEC IPE에는 MEC011 발견 코드가 적용됐다. Pi loopback 등록부에 서비스 이름 `safezone-vision-cin-trial`을 수동 등록했고, 그 주소는 실제 `fusedTracks` oneM2M CIN 경로를 가리킨다. VisionAI가 꺼져 있을 때 등록부의 서비스 상태는 `ACTIVE`였지만 데이터 신선도 상태는 `INACTIVE`였다. VisionAI를 잠시 실행하자 IPE가 발견한 주소에서 실제 최신 데이터를 읽고 데이터 상태를 `INACTIVE → ACTIVE`로 갱신했다. 시험 뒤 VisionAI는 다시 껐다. 등록 상태 `ACTIVE`만으로 실제 데이터가 신선하다고 판단할 수 없다.
 
 #### 확장점: 서비스 이름과 oneM2M 주소 분리
 
 | 설정 | 역할 | 현재 Pi 구성 |
 |---|---|---|
 | `IPE_MEC_BASE` | 조회할 MEC011 등록부 선택 | Pi loopback의 mock registry |
-| `IPE_MEC_SERVICE` | 발견할 Vision 서비스 이름 | 수동 등록한 `safezone-mock-vision` |
+| `IPE_MEC_SERVICE` | 발견할 Vision 서비스 이름 | 수동 등록한 `safezone-vision-cin-trial` |
 | `IPE_DISCOVERY_CSE_BASE` | 발견 주소가 속할 수 있는 허용 CSE | 생략 시 `IPE_MN_BASE` 사용 |
 
 IPE가 서비스 이름으로 주소를 찾으므로 Vision CIN endpoint를 엔진 코드에 고정할 필요가 없다. 같은 서비스 이름의 결과가 여러 개면 임의로 고르지 않고, 발견된 주소가 허용 CSE 밖이면 사용하지 않는다. 이 경계는 다른 CSE에 서비스를 두는 확장 경로를 제공하지만, 원격 CSE 배치는 장비에서 시험하지 않았다. 데이터가 stale이면 `INACTIVE`, 새 데이터가 확인되면 `ACTIVE`로 기록한다. 서비스 자동 등록·주소 갱신과 여러 서비스 중 적절한 endpoint를 자동 선택하는 기능은 구현·검증하지 않았다.
@@ -143,7 +143,7 @@ flowchart LR
     GRP --> ZA
     IPE["MEC IPE<br/>MEC011 discovery + data freshness"]
     IPE -->|"HTTP GET discovered fusedTracks / POST status"| MN
-    MECREG["Pi-local mock MEC011 registry<br/>manual safezone-mock-vision entry"]
+    MECREG["Pi-local mock MEC011 registry<br/>manual safezone-vision-cin-trial entry"]
     IPE <-->|"HTTP · service discovery"| MECREG
     BR["MN→IN bridge AE"]
     MN <-->|"Mca · HTTP polling"| BR

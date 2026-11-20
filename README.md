@@ -178,15 +178,16 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | 장비 | 수량 | 용도 |
 |---|---|---|
 | HLK-LD2450 24GHz 레이더 | 1 | Pi UART로 작업자 무태그 감지 입력 |
-| Raspberry Pi 4B | 1 | tinyIoT MN-CSE, radar uploader, RiskEngine, bridge, MEC IPE |
+| Raspberry Pi 4B | 1 | tinyIoT MN-CSE, radar uploader, RiskEngine, VisionAI, bridge, MEC IPE |
 | Logitech C270 | 1 | USB 카메라; VisionAI가 영상 처리 |
-| NodeMCU ESP8266 + HW-389 | 1 | 축소 지게차 경보 노드 |
-| SG90 서보 + 부저 | 각 1 | 모형 포크 움직임·정지와 경보음. 주행 모터가 아님 |
-| NodeMCU ESP8266 | 1 | 작업자 태그, 부저와 LED 표시창 |
+| NodeMCU ESP8266 1.0 + HW-389 | 1 | 축소 지게차 경보 노드 |
+| SG90 서보 | 1 | 모형 포크 움직임·정지. 주행 모터가 아님 |
+| 능동 부저 TMB12A05 | 2 | 지게차·작업자 경보음 |
+| NodeMCU ESP8266 v3 (LoLin) | 1 | 작업자 태그, 부저와 LED 표시창 |
 | 9 V 배터리 | 1 | 모형 안의 forklift alarm node 전원 |
 | Pi용 5 V, 3 A 전원 | 1 | Raspberry Pi 전원 |
 | USB 보조배터리 | 1 | 휴대폰 핫스팟 외부 구성 시험에서 사용 |
-| 노트북 | 1 | Docker IN-CSE와 시연 대시보드 |
+| 노트북·휴대폰 핫스팟 | 각 1 | Docker IN-CSE, 시연 대시보드, 네트워크·SSH·펌웨어 업로드 |
 | 3D 프린팅 부품 | 필요 수량 | 지게차 축소 모형, 레이더 장착부, 작업자 태그 케이스 |
 
 ### 6.2 소프트웨어
@@ -194,27 +195,54 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | 구분 | 내용 |
 |---|---|
 | MEC OS | Raspberry Pi OS Lite 64-bit (Debian Trixie) |
-| oneM2M CSE | tinyIoT (C, DB는 SQLite) |
+| oneM2M CSE | tinyIoT MN-CSE 및 IN-CSE (C, DB는 SQLite) |
 | 레이더·RiskEngine·VisionAI·브리지·대시보드·IPE | Python 3 |
-| VisionAI | Ultralytics YOLO, OpenCV |
-| MQTT broker | Mosquitto (Pi) |
+| VisionAI | Ultralytics YOLO11n-pose (NCNN), OpenCV |
+| MQTT 브로커 | Eclipse Mosquitto (Pi, oneM2M MQTT 바인딩) |
 | IN-CSE | Docker 컨테이너 |
-| ESP8266 | Arduino IDE, ESP8266 board package, ArduinoJson |
-| oneM2M CSE | tinyIoT MN-CSE 및 IN-CSE |
+| ESP8266 | Arduino IDE, esp8266 보드 패키지 3.1.2, ArduinoJson 7 |
 | 개발 도구 | VS Code Remote-SSH, Git/GitHub |
+| 3D 모델링 | OpenSCAD |
 
 ### 6.3 배선
 
-**현재 프로토타입 (LD2450 → 라즈베리파이 UART)**
+회로도: [레이더 노드](docs/Schematics%20and%20circuit%20diagrams/1_radar_pi_uart.png) · [지게차 경보 노드](docs/Schematics%20and%20circuit%20diagrams/2_forklift_alarm_node.png) · [작업자 경보 태그](docs/Schematics%20and%20circuit%20diagrams/3_worker_alarm_tag.png)
+
+**① 레이더 노드: LD2450 → Raspberry Pi 4 (UART)**
 
 | LD2450 | Raspberry Pi 4B |
 |---|---|
 | 5V | 핀 2 (5V) |
-| GND | 핀 6 |
+| GND | 핀 6 (GND) |
 | TX | 핀 10 (GPIO15, RXD) |
 | RX | 핀 8 (GPIO14, TXD) |
 
-통신 규격은 256000 bps, 8N1, 3.3 V 레벨이다. C270은 USB로 Pi에 연결된다. ESP 보드의 전체 GPIO 배선도는 프로젝트 파일에서 검증된 회로도를 찾지 못해 여기서 핀 번호를 추정하지 않는다. 지게차 모형의 SG90은 포크를 움직이며, 차량 주행 모터/드라이버를 제어하는 회로가 아니다.
+통신 규격은 256000 bps, 8N1, 3.3 V 레벨이다. `raspi-config`에서 시리얼 로그인 셸은 끄고 시리얼 하드웨어는 켠다. C270은 USB로 Pi에 연결된다. 지게차 모형의 SG90은 포크를 움직이며, 차량 주행 모터가 아니다.
+
+**② 지게차 경보 노드: NodeMCU 1.0 + HW-389 확장보드**
+
+| 부품 | 연결 | 비고 |
+|---|---|---|
+| SG90 신호 (주황) | D5 (GPIO14) | `Servo.attach(14, 500, 2400)` |
+| SG90 + (빨강) | 확장보드 전원 헤더 5V | 신호 열의 V 핀(3.3V)은 쓰지 않음 |
+| SG90 − (갈색) | GND | |
+| 부저 + (긴 다리) | D6 (GPIO12) | 능동 부저 TMB12A05 |
+| 부저 − (짧은 다리) | GND | |
+| 9V 건전지 | 확장보드 DC 잭 | 단독 동작 |
+
+tinyIoT 구독 알림(HTTP `/notify`)으로 `AE-forklift01/alert`를 받는다. safe: 포크 왕복 / warn: 왕복 + 느린 경보 / danger·unknown: 포크 정지 + 경보. 내장 LED(GPIO2)는 경보 중 켜진다.
+
+**③ 작업자 경보 태그: NodeMCU v3 (LoLin)**
+
+| 부품 | 연결 |
+|---|---|
+| 부저 + (긴 다리) | D6 (GPIO12) |
+| 부저 − (짧은 다리) | GND |
+| USB 보조배터리 | micro-USB |
+
+켜지면 tinyIoT에 `AE-worker01`로 스스로 등록한다(`lbl type:worker-alarm`). warn: 느린 경보, danger: 빠른 경보, 내장 LED가 부저와 함께 깜빡인다.
+
+초기 목표 배선안(ESP8266이 레이더를 직접 읽고 아두이노가 모터 드라이버를 제어)은 채택하지 않았다. 레이더는 Pi UART로 읽고, 경보 장치는 oneM2M 구독 알림을 받아 ESP8266이 직접 서보·부저를 제어한다.
 
 ---
 

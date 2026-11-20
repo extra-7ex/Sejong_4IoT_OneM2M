@@ -40,7 +40,7 @@ RiskEngine의 production 모듈 여덟 개는 제출 브랜치와 줄바꿈을 �
 | alert fan-out | forklift·worker·zone alert CNT 모두에 `level=danger`, `dist=1170` CIN을 확인 | 이번 ACP 시험에서 ESP 알림 수신, 부저·서보 동작은 따로 확인하지 않음 |
 | SUB | 기존 SUB만 확인 | 이 시험에서 MQTT SUB를 만들거나 변경하지 않음 |
 | VisionAI | 촬영 후 과열 때문에 중지. 엔진은 저장돼 있던 `fusedTracks`를 stale로 처리 | 녹화 시연의 camera–radar fusion 결과는 촬영 당시의 별도 결과. MEC 검사 뒤 VisionAI를 다시 중지 |
-| MEC registry / data | Pi loopback의 컨테이너가 약 26분 실행. 수동 등록된 `safezone-mock-vision`은 `ACTIVE`; Vision 입력이 없을 때 데이터 상태는 `INACTIVE`. VisionAI를 잠시 켜자 IPE가 실제 `fusedTracks` 최신 데이터를 읽어 `INACTIVE → ACTIVE`로 기록 | 등록 상태와 데이터 freshness는 별개. 컨테이너 접근은 Pi loopback 한정 |
+| MEC registry / data | Pi loopback의 컨테이너가 약 26분 실행. 수동 등록된 `safezone-vision-cin-trial`은 `ACTIVE`; Vision 입력이 없을 때 데이터 상태는 `INACTIVE`. VisionAI를 잠시 켜자 IPE가 실제 `fusedTracks` 최신 데이터를 읽어 `INACTIVE → ACTIVE`로 기록 | 등록 상태와 데이터 freshness는 별개. 컨테이너 접근은 Pi loopback 한정 |
 | MEC011 discovery IPE | 발견 코드가 운영 Pi IPE에 적용됨. 서비스 등록부 조회와 실제 Vision CIN 주소 확인 후 freshness 상태 기록. 별도 로컬 브랜치의 17개 단위 시험 통과 보고 | 자동 Vision 서비스 등록과 다중 서비스 자동 선택은 미구현. 원격 CSE는 실제 장비에서 미검증 |
 
 현재 VisionAI는 중지돼 있어 실시간 융합을 제공하지 않는다. MEC IPE는 수동 등록된 Vision data service를 발견해 실제 oneM2M 최신 데이터를 확인한다. 등록부 `ACTIVE`는 데이터 freshness `ACTIVE`를 뜻하지 않는다. 기본적으로 같은 Pi의 `IPE_MN_BASE`를 사용하며, `IPE_DISCOVERY_CSE_BASE`로 허용 CSE를 바꿀 수 있다. `IPE_MEC_BASE`는 등록부, `IPE_MEC_SERVICE`는 서비스 이름을 지정한다. 이름이 중복되면 임의로 선택하지 않고 허용 CSE 밖의 주소를 쓰지 않는다. 이 discovery 코드는 운영 Pi IPE에 적용됐지만 소스 브랜치 `codex/mec011-live-discovery`는 GitHub에 push되지 않아 배포 코드와 저장소 간 소스 동기화가 남아 있다. 원격 CSE 경유 discovery는 Pi에서 시험하지 않았다. 여러 엣지 장비로 확장할 때 서비스 자동 등록·주소 변경 반영과 위치·부하 등 기준에 따른 적절한 서비스 선택이 다음 단계다.
