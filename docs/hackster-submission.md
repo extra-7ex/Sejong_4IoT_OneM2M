@@ -78,7 +78,7 @@ The team built the radar and forklift-model hardware, worker-tag firmware and on
 
 ## Submission assets — outside the Story field
 
-- Source repository: https://github.com/extra-7ex/Sejong_4IoT_OneM2M/tree/codex/safezone-submission-20261120
+- Source repository: https://github.com/extra-7ex/Sejong_4IoT_OneM2M
 - Add the recorded demo video in Hackster’s separate video field.
 - Select a cover image for the separate 4:3 image field.
 - The circuit diagram has been uploaded as a separate project asset.
