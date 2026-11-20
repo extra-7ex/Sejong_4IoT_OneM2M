@@ -7,6 +7,8 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 > **시연에서 확인한 동작 (2026-11-20):** Pi 레이더 업로더가 MQTT로 CIN을 만들고 RiskEngine이 HTTP polling으로 레이더와 Vision 입력을 판단해 경보 그룹에 기록한다. 영상에서 거리 단계, 카메라·레이더 동일 작업자 확인과 쭈그린 자세에 따른 WARNING→DANGER, VisionAI 중단, 레이더 중단 시 UNKNOWN→모형 포크 정지를 보여 준다. 그룹 기록은 세 경보 CNT에 fan-out됐고 작업자 ESP의 DANGER 모드를 확인했다. Pi MN-CSE는 노트북 IN-CSE에 등록되어 있으며 이력은 별도 HTTP/Mca 브리지가 옮기고 노트북 대시보드가 조회한다. Vision의 자동 부팅 등록과 장기 신뢰성은 확인하지 않았다. 11월 20일 점검 시 DHCP 예약은 구성되지 않았다. SG90은 모형 포크를 움직이며 실제 지게차 주행 모터를 제어하지 않는다. 자세한 [아키텍처](docs/architecture.md)와 [배포 기록](docs/deployment.md)를 참고한다.
 
+> **촬영 후 Pi 확인:** RiskEngine Origin은 `Criskengine`이고 입력·기록은 HTTP polling/write다. 운영 그룹에 `macp`를 연결하고 세 alert CNT의 `Criskengine` 권한을 CREATE로 제한했다. events와 세 alert CNT의 기록은 성공했지만 이 ACP 재시험에서는 ESP 알림 수신이나 장치 출력을 확인하지 않았다. MEC IPE는 수동 등록한 Vision 서비스의 주소를 MEC011 등록부에서 발견해 최신 oneM2M 데이터를 조회했다. VisionAI를 잠시 실행했을 때 데이터 상태가 `INACTIVE → ACTIVE`로 바뀌었고 시험 뒤 다시 중지했다. 등록 상태 `ACTIVE`와 데이터 신선도 상태는 별개다.
+
 ---
 
 ## 1. 프로젝트 개요
@@ -28,12 +30,12 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 ## 2. 확인된 시스템 구성
 
-현재 Pi의 실행 흐름은 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 상세히 정리했다. 실선 경로는 실제 배치 또는 날짜를 기록한 시험이며, 점선의 Mp1/MEC011 링크는 목표 구조다. tinyIoT MN-CSE는 Pi edge의 oneM2M 서비스이며, 대회 참조 그림에서는 MEC App 역할로 대응해 표시한다. 실제 ETSI MEC 플랫폼 등록·발견은 연결·검증하지 않았다.
+Pi의 실제 실행 흐름과 시험 경계는 [호출 흐름 그림과 통합 기록](docs/architecture.md)에 정리했다. tinyIoT는 Pi의 **oneM2M MN-CSE**다. 운영 MEC IPE는 MEC011 등록부에서 수동 등록한 Vision 데이터 서비스를 찾아 최신성을 확인하고 상태를 기록한다. MEP의 앱 배치·관리가 확인되지 않아 MN-CSE, VisionAI, IPE·adapter를 MEC App으로 분류하지 않는다.
 
 ```mermaid
 flowchart LR
   LD["LD2450"] -->|"UART"| RIPE["Radar Collection IPE / MN-AE"]
-  RIPE -->|"Mca · MQTT radar CIN"| MN["Pi tinyIoT MN-CSE<br/>edge app"]
+  RIPE -->|"Mca · MQTT radar CIN"| MN["Pi tinyIoT MN-CSE<br/>oneM2M MN-CSE"]
   CAM["C270"] -->|"USB"| VIS["VisionAI"]
   VIS -->|"Mca · HTTP fusedTracks CIN"| MN
   RAD["radar CNT"] <-->|"Mca · HTTP polling"| RE["RiskEngine<br/>separate install"]
@@ -47,7 +49,7 @@ flowchart LR
   DASH -->|"Mca · HTTP"| IN
   IPE["MEC IPE<br/>Vision status"] -->|"Mca · GET state / POST health"| MN
   MN -->|"Mcc · CSE registration"| IN
-  MN -.->|"Mp1 · MEC011 registration / discovery<br/>target, unverified"| MEC["ETSI MEC Platform"]
+  IPE <-->|"HTTP · MEC011 service discovery"| MECREG["Pi-local mock MEC011 registry<br/>Vision service manually registered"]
 ```
 
 Radar 업로더만 Pi에서 MQTT로 radar CIN을 만든다. RiskEngine이 레이더와 설정된 Vision CIN을 HTTP polling해 위험을 판단하고, `events`와 경보 그룹에 HTTP로 기록한다. VisionAI는 USB 카메라 영상을 처리해 HTTP로 `fusedTracks`를 쓴다. 두 ESP의 SUB 알림도 HTTP다. MN은 노트북 IN에 Mcc로 등록되어 있고, 이벤트 이력 전달은 브리지 AE가 양쪽 CSE에 Mca/HTTP 요청을 보내는 별도 경로다. 노트북 대시보드는 MN 현재 상태와 IN 이력을 조회한다. Pi 임시 대시보드는 이 구조도에서 제외했다.
@@ -100,7 +102,7 @@ TinyIoT-MN
    └─ status                 [CNT] Vision service-health state
 ```
 
-worker AE를 재등록한 뒤 새 alert CNT RI를 경보 그룹 `mid`에 복원했다. 이후 `/fopt` DANGER 쓰기가 세 alert CNT에 각각 기록되고 worker ESP가 위험 모드에 들어가는 것을 확인했다. worker ACP에는 `CAdmin` create/retrieve/discovery 권한(마스크 35)이 있으므로 최소 권한은 별도 검토 대상이다. 정확한 ACP/SUB URI와 서버별 CSE naming은 [배포 기록](docs/deployment.md)에서 구분한다.
+worker AE 재등록 후 새 alert CNT RI를 경보 그룹 `mid`에 연결했다. 후속 ACP 변경으로 운영 group `macp`와 세 alert CNT에 `Criskengine` CREATE 권한을 설정하고 `cnm=3`을 확인했다. 녹화 시연에서는 `/fopt` fan-out 뒤 worker ESP의 DANGER 모드를 관찰했으며, 촬영 후 ACP 재시험은 세 CNT 기록까지만 확인했다. 정확한 ACP/SUB URI와 서버별 CSE naming은 [배포 기록](docs/deployment.md)에서 구분한다.
 
 주요 리소스 유형: CSEBase(ty 5)는 서버 최상위, ACP(1)는 접근 정책, AE(2)는 애플리케이션, CNT(3)는 데이터 컨테이너, CIN(4)은 개별 데이터, GRP(9)는 그룹, SUB(23)는 변경 알림 설정이다.
 
@@ -115,7 +117,7 @@ worker AE를 재등록한 뒤 새 alert CNT RI를 경보 그룹 `mid`에 복원�
 | alert SUB → ESP8266 | Worker `nu=Cworker01` → AE poa 경로와 worker 위험 모드 확인. Forklift `/notify` 경로의 모형 동작은 11/15·11/18 시험 보고 |
 | events → IN-CSE | MN→IN 브리지 HTTP polling/write와 노트북 Docker IN 기록 확인 |
 
-MQTT oneM2M binding과 HTTP 요청, oneM2M SUB resource는 서로 다른 층의 기능이다. 현재 MQTT는 radar CIN 생성 구간이고, RiskEngine·Vision write/read, ESP notification, MN→IN bridge는 HTTP다. 외부 MEC011 연결은 미검증이다.
+MQTT oneM2M binding과 HTTP 요청, oneM2M SUB resource는 서로 다른 층의 기능이다. 현재 MQTT는 radar CIN 생성 구간이고, RiskEngine·Vision write/read, ESP notification, MN→IN bridge는 HTTP다. Pi 운영 MEC IPE가 MEC011에서 수동 등록한 Vision 서비스를 발견하고 실제 oneM2M CIN의 freshness를 조회했다. 여러 엣지 장비에 대한 서비스 자동 등록·주소 갱신, 적절한 서비스 자동 선택과 원격 CSE 연결은 다음 단계다.
 
 ### 4.3 데이터 형식 (con)
 
@@ -140,7 +142,7 @@ CIN의 `con`은 JSON 문자열일 수 있다. Vision의 `ttc_s`와 RiskEngine의
 | MN-CSE ↔ RiskEngine | HTTP polling for radar/Vision; HTTP create for events and alert-group `/fopt` |
 | alert CNT → ESP | HTTP SUB notification over Mca; worker DANGER mode verified; forklift servo/buzzer in dated model tests |
 | MN-CSE → IN-CSE | MN registers with laptop IN over Mcc; a separate bridge AE copies event summaries over HTTP/Mca |
-| MN-CSE ↔ MEC Platform | Mp1/MEC011 registration/discovery is target mapping only; not live-verified |
+| MEC011 / Vision status | Operational IPE discovered the manually registered `fusedTracks` service and read actual oneM2M data; status changed INACTIVE→ACTIVE during a brief VisionAI run |
 
 ## 5. 저장소 구조
 

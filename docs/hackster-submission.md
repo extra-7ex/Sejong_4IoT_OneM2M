@@ -47,9 +47,9 @@ Three design choices shape the response:
 
 SafeZone keeps sensor data, events, alerts, and subscriptions in oneM2M resources. The main paths are `AE-forklift01/radar`, `AE-VisionAI/fusedTracks`, and `AE-riskengine/events`. The worker AE registers with the `type:worker-alarm` label; label discovery lets the system find its alert resource without hard-coding the resource name. Its SUB uses `nu=Cworker01`, which the CSE resolves through the AE’s point of access. The forklift SUB stores an HTTP `/notify` endpoint directly.
 
-A single write to the group fan-out point `/grp-safezone-alarms/fopt` was recorded in all three alert containers: forklift, worker, and zone. The worker ESP entered DANGER mode. The zone alert container is a configured expansion point; this build has no physical zone beacon attached.
+During the recorded demo, a write to `/grp-safezone-alarms/fopt` appeared in all three alert containers: forklift, worker, and zone, and the worker ESP entered DANGER mode. In a later ACP retest, the three containers again showed `danger` records (`dist=1170`); that retest did not check ESP receipt or physical outputs. The zone alert container is a configured expansion point; this build has no physical zone beacon attached.
 
-The Pi MN-CSE is registered with the laptop’s Docker IN-CSE over Mcc. Event-history transfer is a separate bridge AE: it polls events from MN and creates summaries in IN using HTTP/Mca. The dashboard reads current state from MN and history from IN. The running MEC IPE reads Vision freshness and cam_ok, then exposes service status through oneM2M. MEC011 service registration and discovery through an ETSI MEC platform are a next step.
+The Pi MN-CSE is registered with the laptop’s Docker IN-CSE over Mcc. Event-history transfer is a separate bridge AE: it polls events from MN and creates summaries in IN using HTTP/Mca. The dashboard reads current state from MN and history from IN. The operational MEC IPE discovers a Vision data service manually registered in the Pi-local MEC011 registry; its service record points to the actual oneM2M `fusedTracks/la` CIN. The IPE reads the latest CIN and records its freshness. While VisionAI was off, the service registration was `ACTIVE` but the data status was `INACTIVE`; briefly running VisionAI changed the data status from `INACTIVE` to `ACTIVE`. VisionAI was stopped after the test. Automatic service registration and address updates across edge devices, remote CSE discovery, and selection among multiple services remain future work.
 
 ### Hardware build
 
@@ -67,7 +67,7 @@ The radar uploader waits for each MQTT response and skips a new frame while a re
 
 ### Limitations and next steps
 
-The 2.5 m / 1.5 m thresholds and five-second freshness settings are team-selected demo values, not validated safety limits or tracking guarantees. Long-duration operation and restart recovery still need testing. The SG90 stop is demonstrated on a scale model, not a full-size vehicle. ETSI MEC011 registration and discovery remain future integration work.
+The 2.5 m / 1.5 m thresholds and five-second freshness settings are team-selected demo values, not validated safety limits or tracking guarantees. In the post-demo Pi check, VisionAI was stopped after overheating and the stored `fusedTracks` data was stale; the camera–radar fusion above describes the recorded demo. The MEC011 discovery change is running in the Pi IPE, but its source branch is not yet included in the linked repository. Long-duration operation and restart recovery still need testing. The SG90 stop is demonstrated on a scale model, not a full-size vehicle. Automatic service registration, address updates, and selection across edge devices remain future work.
 
 ### Team
 

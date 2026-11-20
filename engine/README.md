@@ -6,6 +6,18 @@
 
 Pi 시연 설정은 warning 2.5 m, danger 1.5 m, stale 제한 5초, 최대 표적 샘플 간격 5초다. 이는 시연 중 적용한 값이다. 팀 기획 기준인 warning 3.0 m / danger 1.5 m와 구분하며, 어느 값도 인증된 안전 한계나 추적 정확도 보증이 아니다. 저장소 설정 기본값은 별도 아래 설정표에 표시한다.
 
+## 촬영 후 Pi ACP 및 RiskEngine 확인 (2026-11-20)
+
+현재 Pi 서비스 Origin은 `Criskengine`이고, 운영 엔진의 입력과 출력은 HTTP polling/write다. radar·`fusedTracks`·`events` 조회 권한이 동작했으며 MQTT SUB는 만들거나 변경하지 않았다. 이 HTTP 경로를 저장소의 별도 MQTT notification 시험과 혼동하지 않는다.
+
+운영 경보 group에는 처음 `macp`가 없었고 `cnm=2`인데 `mid`는 세 alert CNT를 가리키고 있었다. 무구독 시험 group에서 권한을 확인한 다음, 운영 group의 기존 세 `mid`를 유지·갱신하고 전용 group ACP를 `macp`로 연결해 `cnm=3`으로 맞췄다. oneM2M fan-out 쓰기는 group `macp`와 구성원 CNT의 ACP 권한을 모두 사용하며, `cnm`은 group member 수다 ([ETSI TS 118 101 v3.22.0](https://www.etsi.org/deliver/etsi_ts/118100_118199/118101/03.22.00_60/ts_118101v032200p.pdf)). group ACP와 세 alert CNT ACP에서 `Criskengine`에는 CREATE만 허용했다. 소유자 권한 및 worker CNT의 기존 `CAdmin` 권한은 유지했다.
+
+엔진 재시작 후 events CIN 생성은 HTTP 201 / RSC 2001로 성공했다. 세 alert CNT의 최신 CIN은 모두 `level=danger`, `dist=1170`이었다. 이는 저장 권한과 fan-out 기록을 확인한 것이며 ESP notification 수신이나 부저·서보 출력을 확인한 결과가 아니다. VisionAI는 과열 때문에 중지돼 있었고, 엔진은 저장된 `fusedTracks`를 stale로 처리했다. 이 시점은 녹화 영상에서 확인한 VisionAI same-person/posture 결과와 구분한다. 새 MQTT SUB는 만들거나 변경하지 않았다.
+
+운영 MEC IPE는 Pi loopback MEC011 등록부에서 수동 등록한 `safezone-mock-vision`을 발견하고, 등록된 주소의 실제 `fusedTracks` oneM2M 데이터를 확인한다. Vision이 꺼져 있을 때 등록 상태는 `ACTIVE`였지만 데이터 freshness는 `INACTIVE`였고, VisionAI를 잠시 실행하자 실제 CIN을 읽어 데이터 상태가 `INACTIVE → ACTIVE`로 바뀌었다. VisionAI는 시험 뒤 다시 중지했다. 등록 상태만으로 데이터 신선도를 보장하지 않는다.
+
+Discovery 설정은 `IPE_MEC_BASE`(등록부 주소), `IPE_MEC_SERVICE`(찾을 서비스 이름), `IPE_DISCOVERY_CSE_BASE`(발견 주소를 허용할 CSE)로 나뉜다. 마지막 값이 없으면 `IPE_MN_BASE`를 쓴다. 중복 서비스 이름은 임의 선택하지 않고 허용 CSE 밖 주소는 사용하지 않는다. stale 데이터는 `INACTIVE`, 새 데이터는 `ACTIVE`로 기록한다. 기능 코드는 운영 Pi IPE에 적용됐지만 `codex/mec011-live-discovery` 브랜치는 GitHub에 push되지 않아 저장소 소스와 배포본의 동기화가 남아 있다. 별도 브랜치에서 17개 단위 시험 통과가 보고됐다. 서비스 자동 등록·주소 갱신, 다중 서비스 자동 선택과 원격 CSE 경유는 검증하지 않았다.
+
 ## 레이더 입력 시각 검사
 
 모든 레이더 CIN은 `con.ts`에 Unix 초를 포함해야 한다. 레이더 업로더와 엔진의

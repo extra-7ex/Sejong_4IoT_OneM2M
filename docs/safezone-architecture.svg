@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1160" role="img" aria-labelledby="title desc">
-  <title id="title">SafeZone verified demo call flow and MEC next step</title>
-  <desc id="desc">Pi radar, VisionAI, RiskEngine, and oneM2M alert flow; Mcc registration and HTTP/Mca event bridge to the laptop IN-CSE and dashboard. MEC011 discovery is a next step.</desc>
+  <title id="title">SafeZone recorded demo call flow and notebook monitoring path</title>
+  <desc id="desc">Recorded Pi radar, VisionAI, RiskEngine, and oneM2M alert flow; Mcc registration and HTTP/Mca event bridge to the laptop IN-CSE and dashboard. The Pi MEC IPE discovers a manually registered Vision service through the local MEC011 registry and reads its latest oneM2M data.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 z" fill="#35506b"/></marker>
     <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 z" fill="#2779a8"/></marker>
@@ -28,7 +28,7 @@
   </defs>
   <rect width="1600" height="1160" fill="#f4f7fa"/>
   <text x="48" y="54" class="title">SafeZone · verified call flow</text>
-  <text x="48" y="82" class="subtitle">Verified Pi demo flow and laptop monitoring path · dotted Mp1/MEC011 link is a next step</text>
+  <text x="48" y="82" class="subtitle">Recorded demo flow · MEC IPE discovers a manually registered Vision service through local MEC011</text>
 
   <rect x="285" y="112" width="1005" height="840" class="pi"/>
   <text x="315" y="146" class="piTitle">Raspberry Pi edge node</text>
@@ -51,7 +51,7 @@
   <text x="337" y="432" class="nodeText">HTTP fusedTracks CIN</text>
 
   <rect x="700" y="265" width="285" height="125" class="boxPurple"/>
-  <text x="724" y="303" class="nodeTitle">tinyIoT MN-CSE (MEC App)</text>
+  <text x="724" y="303" class="nodeTitle">tinyIoT MN-CSE</text>
   <text x="724" y="330" class="nodeText">oneM2M CSE · Pi edge service</text>
   <text x="724" y="355" class="nodeText">Mca resources and subscriptions</text>
 
@@ -100,8 +100,12 @@
   <!-- Health IPE, bridge, dashboard, and external MEC/IN -->
   <rect x="315" y="710" width="250" height="105" class="boxGreen"/>
   <text x="337" y="745" class="nodeTitle">MEC IPE</text>
-  <text x="337" y="772" class="nodeText">reads freshness + cam_ok</text>
-  <text x="337" y="795" class="nodeText">writes status · no video inference</text>
+  <text x="337" y="772" class="nodeText">discovers service · reads Vision CIN</text>
+  <text x="337" y="795" class="nodeText">writes status · cam_ok / freshness</text>
+  <rect x="315" y="840" width="250" height="90" class="boxPurple"/>
+  <text x="337" y="875" class="nodeTitle">MEC011 mock registry</text>
+  <text x="337" y="903" class="nodeText">manual Vision service entry</text>
+  <text x="337" y="923" class="nodeText">registry ACTIVE ≠ fresh data</text>
   <rect x="640" y="710" width="230" height="105" class="boxBlue"/>
   <text x="662" y="745" class="nodeTitle">MN→IN bridge AE</text>
   <text x="662" y="772" class="nodeText">HTTP polling on MN</text>
@@ -113,13 +117,10 @@
   <rect x="1340" y="850" width="225" height="90" class="box"/>
   <text x="1361" y="885" class="nodeTitle">Notebook dashboard</text>
   <text x="1361" y="912" class="nodeText">MN state + IN history</text>
-  <rect x="1340" y="150" width="225" height="115" class="boxPurple"/>
-  <text x="1361" y="188" class="nodeTitle">ETSI MEC Platform</text>
-  <text x="1361" y="216" class="nodeText">Mp1 · MEC011</text>
-  <text x="1361" y="240" class="nodeText">target; not live-verified</text>
 
   <path d="M565 760 H705 V420 H842 V390" class="edge"/>
   <text x="575" y="694" class="label">Mca · GET Vision state / POST health</text>
+  <path d="M440 815 V840" class="edgeBi"/>
   <path d="M755 815 V850 H1275 V410 H880 V390" class="edgeBi"/>
   <text x="790" y="875" class="label">Mca · HTTP polling / summary write</text>
   <path d="M755 815 V830 H1450 V815" class="edge"/>
@@ -130,8 +131,6 @@
   <text x="1190" y="432" class="label">Mca read MN</text>
   <path d="M1450 850 V815" class="edge"/>
   <text x="1465" y="842" class="label">Mca read IN</text>
-  <path d="M842 265 V160 H1320 V207 H1340" class="target"/>
-  <text x="1030" y="150" class="label">Mp1 · service registration / discovery target</text>
 
   <!-- Device notification outputs -->
   <rect x="510" y="1005" width="285" height="100" class="boxOrange"/>
@@ -150,7 +149,5 @@
   <!-- Legend -->
   <line x1="45" y1="1133" x2="105" y2="1133" class="edge"/>
   <text x="118" y="1138" class="nodeText">Solid: deployed path or dated test</text>
-  <line x1="430" y1="1133" x2="490" y2="1133" class="target"/>
-  <text x="503" y="1138" class="nodeText">Dotted: unverified target</text>
-  <text x="820" y="1138" class="nodeText">Demo: same-person confirmed · posture raised WARNING → DANGER</text>
+  <text x="430" y="1138" class="nodeText">Demo: same-person confirmed · posture raised WARNING → DANGER</text>
 </svg>
