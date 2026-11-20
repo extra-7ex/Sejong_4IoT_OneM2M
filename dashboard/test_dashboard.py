@@ -3,9 +3,10 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
-from dashboard.server import Poller, Store, load_config, unwrap_cin
+from dashboard.server import Poller, Store, cin_created_at, load_config, unwrap_cin
 
 
 class FakeClient:
@@ -48,6 +49,42 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(unwrap_cin({"m2m:cin": {"ri": "a", "con": '{"x": 1}'}})["con"], {"x": 1})
         self.assertEqual(unwrap_cin({"m2m:cin": {"ri": "a", "con": {"x": 1}}})["con"], {"x": 1})
         self.assertIsNone(unwrap_cin({"m2m:cnt": {}}))
+
+    def test_source_freshness_uses_sensor_timestamp_on_first_read(self):
+        with patch("dashboard.server.time.time", return_value=100):
+            self.set("radar_path", {"ri": "old", "con": {"ts": 10, "targets": []}})
+            self.set("fused_path", {"ri": "now", "con": {"ts": 99, "tracks": []}})
+            self.poller.poll_once()
+            sources = self.store.snapshot()["sources"]
+        self.assertEqual((sources["radar"]["freshness"], sources["radar"]["data_age_s"]), ("stale", 90))
+        self.assertEqual((sources["fused"]["freshness"], sources["fused"]["data_age_s"]), ("fresh", 1))
+
+    def test_future_missing_and_failed_source_are_not_fresh(self):
+        with patch("dashboard.server.time.time", return_value=100):
+            self.set("radar_path", {"ri": "future", "con": {"ts": 110, "targets": []}})
+            self.set("fused_path", {"ri": "missing", "con": {"tracks": []}})
+            self.poller.poll_once()
+            sources = self.store.snapshot()["sources"]
+            self.assertEqual(sources["radar"]["freshness"], "future")
+            self.assertEqual(sources["fused"]["freshness"], "invalid_timestamp")
+            self.client.responses[self.cfg["radar_path"]] = ("error:HTTP 403", None)
+            self.poller.poll_once()
+            self.assertEqual(self.store.snapshot()["sources"]["radar"]["freshness"], "unavailable")
+
+    def test_event_age_uses_cin_creation_time_not_first_observation(self):
+        with patch("dashboard.server.time.time", return_value=100):
+            self.set("events_path", {"ri": "e", "ct": "19700101T000010,123", "con": {"status": "SAFE"}})
+            self.poller.poll_once()
+            event = self.store.snapshot()["sources"]["events"]
+        self.assertEqual(event["age_s"], 0)
+        self.assertEqual(event["created_age_s"], 90)
+        self.assertIsNone(cin_created_at("invalid"))
+
+    def test_configured_health_path_checks_allowed_resource(self):
+        self.cfg["mn_health_path"] = "/AE-forklift01/radar/la"
+        with patch.object(self.client, "health", return_value={"ok": True}) as health:
+            self.poller.check_health()
+        health.assert_called_once_with(self.cfg["cse_base"] + self.cfg["mn_health_path"])
 
     def test_preexisting_event_not_recorded_then_new_ones_are(self):
         self.set("radar_path", {"ri": "r1", "con": {"ts": 1, "targets": [{"x": 300, "y": 1200, "v": -20}]}})

@@ -20,12 +20,14 @@ import argparse
 import collections
 import json
 import logging
+import math
 import os
 import threading
 import time
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
@@ -44,6 +46,7 @@ def load_config() -> dict[str, Any]:
         # IN-CSE. 지정하면 연결 상태를 표시하고, 위험 이력을 IN에서 읽는다(IN 모드)
         "in_base": env("DASH_IN_BASE", "").rstrip("/"),
         "in_events_path": env("DASH_IN_EVENTS_PATH", "/AE-safezone/events"),
+        "mn_health_path": env("DASH_MN_HEALTH_PATH", ""),
         "origin": env("DASH_ORIGIN", "CAdmin"),
         "rvi": env("DASH_RVI", "3"),
         "radar_path": env("DASH_RADAR_PATH", "/AE-forklift01/radar/la"),
@@ -53,6 +56,9 @@ def load_config() -> dict[str, Any]:
         # IPE(onem2m/mec_ipe.py)가 기록하는 VisionAI 서비스 상태. ACTIVE·INACTIVE
         "vision_status_path": env("DASH_VISION_STATUS_PATH", "/AE-mecIPE/MecServices/safezone-vision/status/la"),
         "vision_status_stale_s": float(env("DASH_VISION_STATUS_STALE_S", "30")),
+        "radar_stale_s": float(env("DASH_RADAR_STALE_S", "5")),
+        "fused_stale_s": float(env("DASH_FUSED_STALE_S", "3")),
+        "future_skew_s": float(env("DASH_FUTURE_SKEW_S", "1")),
         "poll_s": float(env("DASH_POLL_S", "0.5")),
         "health_s": float(env("DASH_HEALTH_S", "5")),
         "timeout_s": float(env("DASH_TIMEOUT_S", "3")),
@@ -85,6 +91,16 @@ def unwrap_cin(body: Any) -> Optional[dict[str, Any]]:
     if not isinstance(cin, dict) or "con" not in cin:
         return None
     return {"ri": cin.get("ri"), "ct": cin.get("ct"), "con": parse_con(cin.get("con"))}
+
+
+def cin_created_at(value: Any) -> Optional[float]:
+    """oneM2M CIN 생성 시각은 UTC 기준. 인식할 수 없으면 None."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value.split(",")[0], "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return None
 
 
 class CseClient:
@@ -246,6 +262,23 @@ class Store:
                     "ct": src["cin"].get("ct") if src["cin"] else None,
                     "age_s": None if src["changed_at"] is None else round(now - src["changed_at"], 1),
                 }
+                created = cin_created_at(out[name]["ct"])
+                out[name]["created_age_s"] = None if created is None else round(now - created, 1)
+                if name in ("radar", "fused", "vision_status"):
+                    con = out[name]["con"]
+                    ts = con.get("ts") if isinstance(con, dict) else None
+                    limit = self.cfg[{"radar": "radar_stale_s", "fused": "fused_stale_s",
+                                      "vision_status": "vision_status_stale_s"}[name]]
+                    if src["state"] != "ok":
+                        freshness, age = "unavailable", None
+                    elif isinstance(ts, bool) or not isinstance(ts, (int, float)) or not math.isfinite(ts):
+                        freshness, age = "invalid_timestamp", None
+                    else:
+                        age = now - ts
+                        freshness = ("future" if age < -self.cfg["future_skew_s"] else
+                                     "stale" if age > limit else "fresh")
+                    out[name]["data_age_s"] = None if age is None else round(age, 1)
+                    out[name]["freshness"] = freshness
             return {"now": now, "sources": out, "health": dict(self.health),
                     "uptime_s": round(now - self.started),
                     "history": {"mode": "IN" if self.in_mode else "local",
@@ -339,7 +372,7 @@ class Poller(threading.Thread):
             self.store.add_in_summary(cin)
 
     def check_health(self) -> None:
-        health = {"mn": self.client.health(self.cfg["cse_base"])}
+        health = {"mn": self.client.health(self.cfg["cse_base"] + self.cfg.get("mn_health_path", ""))}
         if self.cfg["in_base"]:
             health["in"] = self.client.health(self.cfg["in_base"])
         with self.store.lock:
@@ -364,6 +397,7 @@ class Poller(threading.Thread):
 def make_handler(store: Store, cfg: dict[str, Any]):
     public_cfg = {k: cfg[k] for k in ("cse_base", "in_base", "in_events_path", "radar_path", "events_path", "fused_path",
                                       "alert_path", "vision_status_path", "vision_status_stale_s",
+                                      "radar_stale_s", "fused_stale_s", "future_skew_s", "mn_health_path",
                                       "poll_s", "grid_mm")}
 
     class Handler(BaseHTTPRequestHandler):
