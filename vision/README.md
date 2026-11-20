@@ -65,7 +65,7 @@ python3 -m venv .venv
 .venv/bin/python tools/calibrate.py --config config.pi.yaml --grab calib/site.jpg     # 테이프 점 6개 붙인 뒤 사진
 # 노트북: scp로 가져와 --image calib/site.jpg 로 점 클릭 (또는 u,v,x,y 점 파일로 --points) → calib/H.json을 Pi로
 ```
-지금 `calib/H.json`은 상희 집 임시 설치(약 1 m 높이) 기준 — 대회장에서 다시 한다. 예시 점 파일: `calib/points_c270.csv`.
+`calib/H.json`은 해당 카메라의 위치·각도와 해상도에 종속되며 Git에 포함되지 않는다. 장비를 새로 설치하거나 카메라 위치·각도·해상도를 바꾸면 그 장비에서 위 절차를 다시 수행한다. 최소 4점, 권장 6점 이상의 바닥 좌표를 측정하고 결과 격자와 실제 거리 여러 점을 대조한다. 기존 장비의 보정 파일은 별도 백업하되 다른 장비의 보정값으로 간주하지 않는다. 예시 점 파일: `calib/points_c270.csv`.
 
 시험용 도구(레이더·장비가 없을 때): `tools/start_local_cse.sh`(시험용 tinyIoT, 팀 설정과 포트 3000이 겹침),
 `tools/setup_test_acp.sh`(접근 권한), `tools/run_radar_flow.sh`(가짜 수신기 + 팀 엔진 `~/riskengine` + 레이더 업로더 sim).

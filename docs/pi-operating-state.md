@@ -41,3 +41,12 @@ flowchart LR
 ## 네트워크 복구
 
 Pi와 ESP의 IP는 DHCP로 바뀔 수 있으므로 재시작 후 현재 주소를 확인한다. 지게차 ESP의 펌웨어 CSE 주소, MN의 alert SUB 알림 주소, 작업자 AE의 등록 주소와 SUB, 노트북 IN-CSE 및 브리지 설정을 현재 주소와 대조한다. 연결 주소를 바꾸기 전 기존 설정과 리소스를 확인하고, 실제 알림과 대시보드 반영까지 시험한다. DHCP 예약은 운영 환경의 선택 사항이다.
+
+1. Pi에서 `hostname -I`로 현재 LAN 주소를, 노트북에서 네트워크 설정으로 현재 LAN 주소를 확인한다. ESP 두 개는 각각 시리얼 모니터(115200)의 IP를 확인한다. Tailscale 주소와 LAN 주소는 서로 다를 수 있다.
+2. 지게차 ESP의 Wi-Fi 정보는 `esp8266/led_server/secrets.h`에 둔다. 지게차 알림 수신 주소는 MN의 `AE-forklift01/alert/sub-alert-node`의 `nu`에 있다. `onem2m/sub_alert_node.sh <ESP IP>`는 기존 같은 이름 SUB를 삭제 후 다시 만들므로, 기존 설정·권한과 ESP 접근을 먼저 확인하고 변경 후 `nu`를 조회한다.
+3. 작업자 펌웨어의 Wi-Fi와 `CSE_HOST`는 `esp8266/led_server/secrets.h`에서 설정한다. Pi 주소가 달라지면 펌웨어 설정을 확인한다. 저장소의 최신 작업자 코드는 기존 AE의 `poa`를 새 IP로 갱신하려 하지만 실제 장치에 올라간 버전과 성공 여부를 확인해야 한다. `AE-worker01`의 `poa`와 `alert` SUB의 `nu`를 조회해 실제 장치 주소가 반영됐는지 확인한다.
+4. 브리지 목적지는 `BRIDGE_IN_BASE`다. Pi에서는 `systemctl cat safezone-bridge`로 `/etc/systemd/system/safezone-bridge.service.d/`의 적용 순서를 확인한다. 2026-11-20에는 마지막 `zzz-laptop74.conf`가 이전 주소 설정보다 우선했다. 노트북 IN 주소가 달라지면 현재 drop-in을 백업하고 실제 주소와 CSE 이름에 맞춰 갱신한 뒤 `daemon-reload`와 브리지 재시작이 필요하다. `BRIDGE_STATE`는 전달 위치를 기록하므로 원인 확인 없이 삭제하지 않는다.
+5. MN의 상위 CSE 등록 주소는 브리지 목적지와 별도다. `systemctl cat tinyiot-mn`의 실제 실행 파일과 CSE 설정, 노트북 IN 등록 상태를 확인한다. Pi 빌드에서 원격 주소를 어디서 읽는지 확인하기 전에는 브리지 주소만 바꿔 Mcc 등록도 바뀐다고 가정하지 않는다.
+6. 노트북 대시보드의 IN 주소와 포트 설정을 확인하고, 재연결 후 새 radar·events, 세 alert CNT, 각 ESP 알림과 화면의 실제 데이터 시각을 확인한다. 오래된 CIN이 남아 있을 수 있으므로 표시만으로 새 데이터가 들어왔다고 판단하지 않는다.
+
+tinyIoT 소스 및 빌드 출처의 한계는 [tinyIoT 빌드 기록](../onem2m/tinyiot-patches/README.md)에 정리했다.

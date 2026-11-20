@@ -1,0 +1,257 @@
+diff --git a/source/server/httpd.c b/source/server/httpd.c
+index a8e2200..fa1be9e 100644
+--- a/source/server/httpd.c
++++ b/source/server/httpd.c
+@@ -17,6 +17,11 @@
+ #include <unistd.h>
+ #include <pthread.h>
+ #include <fcntl.h>
++#include <poll.h>
++#include <errno.h>
++#ifndef HTTP_CONNECT_TIMEOUT_MS
++#define HTTP_CONNECT_TIMEOUT_MS 500
++#endif
+ 
+ #define MAX_CONNECTIONS 1024
+ #define BUF_SIZE 65535
+@@ -828,6 +833,37 @@ void parse_http_response(HTTPResponse *res, char *packet)
+     res->payload_size = t2 ? atol(t2) : 0;
+ }
+ 
++/* SafeZone 패치 (2026-11-19): connect()에 시간 제한을 둔다.
++ * 구독 알림은 요청 응답 전에 같은 스레드에서 보낸다. 꺼진 구독 대상(ESP 등)에 연결하느라
++ * 같은 LAN이면 약 3초, 응답 없는 주소면 2분 넘게 막혀, 그동안 MQTT 요청 전체가 밀렸다. */
++static int connect_with_timeout(int sock, const struct sockaddr *addr, socklen_t len, int timeout_ms)
++{
++    int flags = fcntl(sock, F_GETFL, 0);
++    if (flags == -1 || fcntl(sock, F_SETFL, flags | O_NONBLOCK) == -1)
++        return connect(sock, addr, len);
++    int rc = connect(sock, addr, len);
++    if (rc == -1 && errno == EINPROGRESS)
++    {
++        struct pollfd pfd = {.fd = sock, .events = POLLOUT};
++        int pr;
++        do
++        {
++            pr = poll(&pfd, 1, timeout_ms);
++        } while (pr == -1 && errno == EINTR);
++        int soerr = 0;
++        socklen_t slen = sizeof(soerr);
++        if (pr == 1 && getsockopt(sock, SOL_SOCKET, SO_ERROR, &soerr, &slen) == 0 && soerr == 0)
++            rc = 0;
++        else
++        {
++            rc = -1;
++            logger("HTTP", LOG_LEVEL_ERROR, "connect %s (limit %d ms)", pr == 0 ? "timeout" : "failed", timeout_ms);
++        }
++    }
++    fcntl(sock, F_SETFL, flags);
++    return rc;
++}
++
+ int send_http_request(char *host, int port, HTTPRequest *req, HTTPResponse *res)
+ {
+     struct sockaddr_in serv_addr;
+@@ -865,7 +901,7 @@ int send_http_request(char *host, int port, HTTPRequest *req, HTTPResponse *res)
+         memcpy(&serv_addr, result->ai_addr, result->ai_addrlen);
+         freeaddrinfo(result);
+     }
+-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
++    if (connect_with_timeout(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr), HTTP_CONNECT_TIMEOUT_MS) == -1)
+     {
+         logger("HTTP", LOG_LEVEL_ERROR, "connect error");
+         if (res)
+diff --git a/source/server/main.c b/source/server/main.c
+index 1faa9f7..b9ac9d7 100644
+--- a/source/server/main.c
++++ b/source/server/main.c
+@@ -166,6 +166,7 @@ static ssize_t cmdline_read_key(char *arg, unsigned char **buf, size_t maxlen)
+ 
+ int main(int argc, char **argv)
+ {
++	signal(SIGPIPE, SIG_IGN);   /* ignore writes to closed sockets so the server does not exit */
+ 	signal(SIGINT, stop_server);
+ 	logger_init();
+ 
+diff --git a/source/server/sqlite_implement.c b/source/server/sqlite_implement.c
+index 7469453..86b3c59 100644
+--- a/source/server/sqlite_implement.c
++++ b/source/server/sqlite_implement.c
+@@ -106,6 +106,25 @@ int db_rollback_tx()
+ extern cJSON *ATTRIBUTES;
+ extern ResourceTree *rt;
+ 
++/* TEXT 컬럼을 고정 버퍼 없이 cJSON에 추가 (buf[256] strncpy 스택 오버플로 수정) */
++static void db_add_text_column(cJSON *obj, const char *colname, sqlite3_stmt *stmt, int col)
++{
++    const char *txt = (const char *)sqlite3_column_text(stmt, col);
++    if (!txt)
++        return;
++
++    cJSON *parsed = cJSON_Parse(txt);
++    if (parsed && (cJSON_IsArray(parsed) || cJSON_IsObject(parsed)))
++    {
++        cJSON_AddItemToObject(obj, colname, parsed);
++    }
++    else
++    {
++        cJSON_Delete(parsed);
++        cJSON_AddItemToObject(obj, colname, cJSON_CreateString(txt));
++    }
++}
++
+ /* Table definition structure */
+ typedef struct {
+     const char *name;
+@@ -272,6 +291,18 @@ int init_dbp()
+         return 0;
+     }
+ 
++    {   /* optional pragmas from the environment, e.g. TINYIOT_SQLITE_PRAGMA="PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;" */
++        const char *env_pragma = getenv("TINYIOT_SQLITE_PRAGMA");
++        if (env_pragma && *env_pragma) {
++            char *pragma_err = NULL;
++            if (sqlite3_exec(db, env_pragma, NULL, NULL, &pragma_err) != SQLITE_OK)
++                fprintf(stderr, "sqlite pragma failed: %s%c", pragma_err ? pragma_err : "?", 10);
++            else
++                fprintf(stderr, "sqlite pragma applied: %s%c", env_pragma, 10);
++        }
++    }
++
++
+     // Begin transaction for atomic table creation
+     if (!execute_sql_with_error_handling("BEGIN TRANSACTION;", "Begin Transaction", &err_msg)) {
+         sqlite3_close(db);
+@@ -458,18 +489,7 @@ cJSON *db_get_resource_by_uri(char *uri, ResourceType ty)
+         switch (coltype)
+         {
+         case SQLITE_TEXT:
+-            memset(buf, 0, 256);
+-            strncpy(buf, sqlite3_column_text(stmt, col), bytes);
+-            arr = cJSON_Parse(buf);
+-            if (arr && (arr->type == cJSON_Array || arr->type == cJSON_Object))
+-            {
+-                cJSON_AddItemToObject(resource, colname, arr);
+-            }
+-            else
+-            {
+-                cJSON_AddItemToObject(resource, colname, cJSON_CreateString(buf));
+-                cJSON_Delete(arr);
+-            }
++            db_add_text_column(resource, colname, stmt, col);
+             break;
+         case SQLITE_INTEGER:
+             if (strcmp(colname, "fcied") == 0)
+@@ -553,18 +573,7 @@ cJSON *db_get_resource(char *ri, ResourceType ty)
+         switch (coltype)
+         {
+         case SQLITE_TEXT:
+-            memset(buf, 0, 256);
+-            strncpy(buf, sqlite3_column_text(stmt, col), bytes);
+-            arr = cJSON_Parse(buf);
+-            if (arr && (arr->type == cJSON_Array || arr->type == cJSON_Object))
+-            {
+-                cJSON_AddItemToObject(resource, colname, arr);
+-            }
+-            else
+-            {
+-                cJSON_AddItemToObject(resource, colname, cJSON_CreateString(buf));
+-                cJSON_Delete(arr);
+-            }
++            db_add_text_column(resource, colname, stmt, col);
+             break;
+         case SQLITE_INTEGER:
+             if (strcmp(colname, "fcied") == 0)
+@@ -1094,18 +1103,7 @@ RTNode *db_get_all_resource_as_rtnode()
+             switch (coltype)
+             {
+             case SQLITE_TEXT:
+-                memset(buf, 0, 256);
+-                strncpy(buf, sqlite3_column_text(res, col), bytes);
+-                arr = cJSON_Parse(buf);
+-                if (arr && (arr->type == cJSON_Array || arr->type == cJSON_Object))
+-                {
+-                    cJSON_AddItemToObject(json, colname, arr);
+-                }
+-                else
+-                {
+-                    cJSON_AddItemToObject(json, colname, cJSON_CreateString(buf));
+-                    cJSON_Delete(arr);
+-                }
++                db_add_text_column(json, colname, res, col);
+                 break;
+             case SQLITE_INTEGER:
+                 cJSON_AddItemToObject(json, colname, cJSON_CreateNumber(sqlite3_column_int(res, col)));
+@@ -1141,18 +1139,7 @@ RTNode *db_get_all_resource_as_rtnode()
+                 switch (coltype)
+                 {
+                 case SQLITE_TEXT:
+-                    memset(buf, 0, 256);
+-                    strncpy(buf, sqlite3_column_text(res2, col), bytes);
+-                    arr = cJSON_Parse(buf);
+-                    if (arr && (arr->type == cJSON_Array || arr->type == cJSON_Object))
+-                    {
+-                        cJSON_AddItemToObject(json, colname, arr);
+-                    }
+-                    else
+-                    {
+-                        cJSON_AddItemToObject(json, colname, cJSON_CreateString(buf));
+-                        cJSON_Delete(arr);
+-                    }
++                    db_add_text_column(json, colname, res2, col);
+                     break;
+                 case SQLITE_INTEGER:
+                     if (strcmp(colname, "fcied") == 0)
+@@ -1320,18 +1307,7 @@ RTNode *db_get_latest_cins()
+             switch (coltype)
+             {
+             case SQLITE_TEXT:
+-                memset(buf, 0, 256);
+-                strncpy(buf, sqlite3_column_text(res, col), bytes);
+-                arr = cJSON_Parse(buf);
+-                if (arr && (arr->type == cJSON_Array || arr->type == cJSON_Object))
+-                {
+-                    cJSON_AddItemToObject(json, colname, arr);
+-                }
+-                else
+-                {
+-                    cJSON_AddItemToObject(json, colname, cJSON_CreateString(buf));
+-                    cJSON_Delete(arr);
+-                }
++                db_add_text_column(json, colname, res, col);
+                 break;
+             case SQLITE_INTEGER:
+                 cJSON_AddItemToObject(json, colname, cJSON_CreateNumber(sqlite3_column_int(res, col)));
+@@ -1416,18 +1392,7 @@ cJSON *db_get_cin_laol(RTNode *parent_rtnode, int laol)
+         switch (coltype)
+         {
+         case SQLITE_TEXT:
+-            memset(buf, 0, 256);
+-            strncpy(buf, sqlite3_column_text(res, col), bytes);
+-            arr = cJSON_Parse(buf);
+-            if (arr && (arr->type == cJSON_Array || arr->type == cJSON_Object))
+-            {
+-                cJSON_AddItemToObject(json, colname, arr);
+-            }
+-            else
+-            {
+-                cJSON_AddItemToObject(json, colname, cJSON_CreateString(buf));
+-                cJSON_Delete(arr);
+-            }
++            db_add_text_column(json, colname, res, col);
+             break;
+         case SQLITE_INTEGER:
+             cJSON_AddItemToObject(json, colname, cJSON_CreateNumber(sqlite3_column_int(res, col)));
+@@ -2423,11 +2388,7 @@ cJSON *db_get_tsi_laol(RTNode *parent_rtnode, int laol) {
+         if (bytes == 0) continue;
+ 
+         if (coltype == SQLITE_TEXT) {
+-            memset(buf, 0, sizeof(buf));
+-            strncpy(buf, (const char*)sqlite3_column_text(res, col), bytes);
+-            cJSON *arr = cJSON_Parse(buf);
+-            if (arr && (arr->type == cJSON_Array || arr->type == cJSON_Object)) cJSON_AddItemToObject(json, colname, arr);
+-            else { cJSON_AddItemToObject(json, colname, cJSON_CreateString(buf)); cJSON_Delete(arr); }
++            db_add_text_column(json, colname, res, col);
+         } else if (coltype == SQLITE_INTEGER) {
+             cJSON_AddItemToObject(json, colname, cJSON_CreateNumber(sqlite3_column_int(res, col)));
+         }
