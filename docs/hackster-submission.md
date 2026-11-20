@@ -82,6 +82,7 @@ The team split work across radar and forklift alarm hardware, worker-tag firmwar
 
 ## Submission assets — outside the Story field
 
+- Link the source repository: https://github.com/extra-7ex/Sejong_4IoT_OneM2M/tree/codex/safezone-submission-20261120
 - Embed the recorded demo video in the separate video field.
 - Choose a cover image for the separate 4:3 image field.
 - Add the architecture illustration shown above to the Story. It is a call-flow diagram, not an electrical schematic.
