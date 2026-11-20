@@ -79,7 +79,7 @@ The team built the radar and forklift-model hardware, worker-tag firmware and on
 ## Submission assets — outside the Story field
 
 - Source repository: https://github.com/extra-7ex/Sejong_4IoT_OneM2M
-- Add the recorded demo video in Hackster’s separate video field.
+- Demo video for Hackster’s separate video field: https://www.youtube.com/watch?v=yl5t3CzdHbM
 - Select a cover image for the separate 4:3 image field.
 - The circuit diagram has been uploaded as a separate project asset.
 - The SVG above is the architecture figure; add a photo of the physical model if available.
