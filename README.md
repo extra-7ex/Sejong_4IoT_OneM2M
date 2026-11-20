@@ -1,9 +1,10 @@
 # Sejong_4IoT_OneM2M
 
-**레이더와 VisionAI로 작업자 근접 위험을 판단하고 현장 경보와 관제를 연결하는 엣지 시스템**
-oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
+**SafeZone: edge-based forklift proximity safety with mmWave radar + camera AI on oneM2M and ETSI MEC**  
+oneM2M Hackathon 2026 · Team 4IoT  
+레이더와 VisionAI로 작업자 근접 위험을 판단하고 현장 경보와 관제를 연결하는 엣지 시스템 (oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀)
 
-▶️ **[SafeZone 실장비 시연 영상 보기](https://www.youtube.com/watch?v=yl5t3CzdHbM)**
+▶️ **[Watch the demo video / SafeZone 실장비 시연 영상 보기](https://www.youtube.com/watch?v=yl5t3CzdHbM)**
 
 ## English overview (for judges)
 
