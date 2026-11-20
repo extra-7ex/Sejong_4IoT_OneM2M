@@ -5,6 +5,55 @@ oneM2M · ETSI MEC 기반 AIoT 해커톤 · 4IoT 팀
 
 ▶️ **[SafeZone 실장비 시연 영상 보기](https://www.youtube.com/watch?v=yl5t3CzdHbM)**
 
+## English overview (for judges)
+
+**SafeZone** is a forklift–pedestrian safety prototype for the oneM2M Hackathon 2026 by Team 4IoT (Sejong University). A 24 GHz mmWave radar (HLK-LD2450) and a camera AI (YOLO11n-pose on a Logitech C270) watch the area behind a forklift model. A risk engine on a Raspberry Pi 4 decides SAFE / WARNING / DANGER / UNKNOWN, and one oneM2M group request alerts the forklift alarm and the worker tag.
+
+- 📄 **Project article (Hackster.io):** https://www.hackster.io/4iot/safezone-edge-based-forklift-proximity-safety-5540f5
+- ▶️ **Demo video (4:24):** https://youtu.be/yl5t3CzdHbM
+
+**What the demo shows**
+
+| Case | What happens |
+|---|---|
+| A. Distance | WARNING inside 2.5 m, DANGER (fork stops) inside 1.5 m; restart only after 3 s of continuous SAFE |
+| B. Posture | Same distance, but a crouching worker raises WARNING to DANGER (camera can raise risk, never lower it) |
+| C. Camera AI stops | The radar keeps protecting; risk is not lowered |
+| D. Radar stops | Radar data goes stale after 5 s → UNKNOWN and the fork stops (fail-safe) |
+
+**oneM2M and MEC in this repo**
+
+- tinyIoT **MN-CSE** on the Pi, registered over **Mcc** to an **IN-CSE** on a laptop (Docker), which keeps the event history for the dashboard.
+- Resources: `AE-forklift01/radar` (radar CIN over the **MQTT** binding), `AE-VisionAI/fusedTracks`, `AE-riskengine/events`, and the group `grp-safezone-alarms` whose `/fopt` fan-out writes one alert into three alert containers. Devices receive it through **subscriptions** (HTTP notify). The worker tag registers itself with a label (`type:worker-alarm`) and its own **ACP**.
+- We patched tinyIoT so a group fan-out write triggers the members' notifications: [`onem2m/tinyiot-patches/`](onem2m/tinyiot-patches/).
+- **ETSI MEC:** the MEC IPE ([`onem2m/mec_ipe.py`](onem2m/mec_ipe.py)) finds the VisionAI service through the **MEC 011** service registry (AdvantEDGE App Enablement), checks that its data is fresh, and writes the status into oneM2M (`AE-mecIPE/MecServices/safezone-vision/status`). MEC 011 experiments: [`experiments/mec011-host-a/`](experiments/mec011-host-a/).
+
+**Repository map**
+
+| Folder | What it is |
+|---|---|
+| [`radar/`](radar/) | LD2450 reader and oneM2M uploader (`radar_node.py`), radar simulator |
+| [`vision/`](vision/) | VisionAI: person + pose → floor coordinates → fusion with radar → `fusedTracks` (AGPL-3.0) |
+| [`engine/`](engine/) | Risk engine: distance + CPA (`t_cpa`, `d_cpa`), camera fusion rules, UNKNOWN on stale data |
+| [`onem2m/`](onem2m/) | Alarm group, MN→IN bridge, MEC IPE, latency tool, tinyIoT patches |
+| [`dashboard/`](dashboard/) | Monitoring dashboard (live state from MN, history from IN) |
+| [`esp8266/`](esp8266/) | Forklift alarm node (SG90 fork + buzzer) and worker tag firmware |
+| [`systemd/`](systemd/), [`tools/preflight.py`](tools/preflight.py) | Pi services and the pre-demo check |
+| [`docs/`](docs/) | Architecture, data formats, deployment record, wiring diagrams |
+
+**Run the tests** (Python 3.10+; no hardware needed)
+
+```bash
+python -m pytest -q engine onem2m radar dashboard
+cd vision && pip install -r requirements.txt && python -m pytest -q
+```
+
+Setup and run steps for the Pi are in [`시연방법.md`](시연방법.md) and [`docs/runbook.md`](docs/runbook.md) (Korean). The rest of this README is in Korean; the Hackster article above is the full English write-up.
+
+**License:** Apache 2.0, except `vision/` (AGPL-3.0, because it uses Ultralytics YOLO11). See section 7.
+
+---
+
 > 최종 수정: 2026-11-20
 
 > **실장비 시연 (2026-11-20):** SafeZone은 Raspberry Pi에서 레이더와 카메라 데이터를 결합해 위험을 판단하고, oneM2M 경보를 작업자 태그와 지게차 모형에 전달한다. 영상에서 거리별 위험 단계, 동일 작업자의 레이더·카메라 확인, 자세에 따른 WARNING→DANGER 상향, VisionAI 중단, 레이더 중단 시 UNKNOWN과 모형 포크 정지를 보여 준다. 경보 그룹의 세 CNT fan-out과 작업자 ESP의 DANGER 모드도 확인했다. 판단 이력은 Pi MN-CSE에서 노트북 IN-CSE로 전달돼 대시보드에서 조회할 수 있다.

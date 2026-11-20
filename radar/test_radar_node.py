@@ -105,7 +105,7 @@ class RadarNodeUnknownTest(unittest.TestCase):
         self.assertEqual(alerts, ["safe", "unknown"])
 
     def test_serial_error_writes_unknown_once(self):
-        alerts, _ = run_node([frame(), ("error",), ("error",), frame(0, 2000)])
+        alerts, _ = run_node([frame(), ("error",), ("error",), frame(0, 4000)])   # WARN_MM(3000) 밖
         self.assertEqual(alerts, ["safe", "unknown", "safe"])
 
 

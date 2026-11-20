@@ -14,7 +14,9 @@ def test_pi_config_inherits_laptop_config():
     assert pi["source"] == "webcam:0" and pi["headless"] is True
     assert pi["model"]["imgsz"] == 320
     assert pi["model"]["conf"] == lap["model"]["conf"]          # 안 적은 값은 config.yaml 것
-    assert pi["thresholds"] == lap["thresholds"]
+    assert pi["thresholds"]["caution_dist_m"] == 2.5             # Pi 시연값 (엔진 warning 2.5 m와 같게)
+    assert {k: v for k, v in pi["thresholds"].items() if k != "caution_dist_m"} == \
+        {k: v for k, v in lap["thresholds"].items() if k != "caution_dist_m"}
     assert pi["posture"] == lap["posture"]
     assert "base" not in pi
 

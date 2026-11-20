@@ -20,7 +20,7 @@ Pi 시연 설정은 warning 2.5 m, danger 1.5 m, stale 제한 5초, 최대 표�
 
 운영 MEC IPE는 Pi loopback MEC011 등록부에서 수동 등록한 `safezone-mock-vision`을 발견하고, 등록된 주소의 실제 `fusedTracks` oneM2M 데이터를 확인한다. Vision이 꺼져 있을 때 등록 상태는 `ACTIVE`였지만 데이터 freshness는 `INACTIVE`였고, VisionAI를 잠시 실행하자 실제 CIN을 읽어 데이터 상태가 `INACTIVE → ACTIVE`로 바뀌었다. VisionAI는 시험 뒤 다시 중지했다. 등록 상태만으로 데이터 신선도를 보장하지 않는다.
 
-Discovery 설정은 `IPE_MEC_BASE`(등록부 주소), `IPE_MEC_SERVICE`(찾을 서비스 이름), `IPE_DISCOVERY_CSE_BASE`(발견 주소를 허용할 CSE)로 나뉜다. 마지막 값이 없으면 `IPE_MN_BASE`를 쓴다. 중복 서비스 이름은 임의 선택하지 않고 허용 CSE 밖 주소는 사용하지 않는다. stale 데이터는 `INACTIVE`, 새 데이터는 `ACTIVE`로 기록한다. 기능 코드는 운영 Pi IPE에 적용됐지만 `codex/mec011-live-discovery` 브랜치는 GitHub에 push되지 않아 저장소 소스와 배포본의 동기화가 남아 있다. 별도 브랜치에서 17개 단위 시험 통과가 보고됐다. 서비스 자동 등록·주소 갱신, 다중 서비스 자동 선택과 원격 CSE 경유는 검증하지 않았다.
+Discovery 설정은 `IPE_MEC_BASE`(등록부 주소), `IPE_MEC_SERVICE`(찾을 서비스 이름), `IPE_DISCOVERY_CSE_BASE`(발견 주소를 허용할 CSE)로 나뉜다. 마지막 값이 없으면 `IPE_MN_BASE`를 쓴다. 중복 서비스 이름은 임의 선택하지 않고 허용 CSE 밖 주소는 사용하지 않는다. stale 데이터는 `INACTIVE`, 새 데이터는 `ACTIVE`로 기록한다. 기능 코드는 운영 Pi IPE에 적용됐고, `codex/mec011-live-discovery` 브랜치로 main에 합쳐졌다(`onem2m/mec_ipe.py`, 시험 `onem2m/test_mec_ipe.py`). 서비스 자동 등록·주소 갱신, 다중 서비스 자동 선택과 원격 CSE 경유는 검증하지 않았다.
 
 ## 레이더 입력 시각 검사
 
