@@ -171,17 +171,17 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 
 | 장비 | 수량 | 용도 |
 |---|---|---|
-| HLK-LD2450 24GHz 레이더 | 1 | 작업자 무태그 감지 |
-| ESP8266 (NodeMCU) | 2 | 경고 장치 등 역할·실제 연결 구성 확인 필요 |
-| Arduino | 1 | 장비 동작부 제어 (모터·LED·부저) |
-| Raspberry Pi 4B | 1 | MEC 서버 (tinyIoT, 엔진, AI) |
-| 모터 + 모터 드라이버 (L298N/L9110S) | 1 | 장비 동력 표현, 속도·방향 제어 |
-| LED (R/Y/G) + 220Ω 저항 | 각 1 | 상태 표시 |
-| 부저 | 2 | 동작부, 경보기 (구매 필요) |
-| 10kΩ 저항 | 1 | RUN 신호 풀다운 (Fail-safe) |
-| 웹캠 | 1 | 카메라 노드 |
-| 3D 프린터 | 1 | 지게차 모형, 레이더 마운트, 케이스 |
-| 노트북 | 1 | IN-CSE, 대시보드 |
+| HLK-LD2450 24GHz 레이더 | 1 | 지게차 후방 작업자 무태그 감지 (Pi UART) |
+| Raspberry Pi 4B | 1 | MEC host: tinyIoT MN·IN, 레이더 업로더, RiskEngine, VisionAI, 대시보드 |
+| 로지텍 C270 웹캠 | 1 | VisionAI |
+| ESP8266 NodeMCU 1.0 + HW-389 확장보드 | 1 | 지게차 경보 노드 (서보·부저) |
+| ESP8266 NodeMCU v3 (LoLin) | 1 | 작업자 경보 태그 |
+| SG90 서보 | 1 | 지게차 포크 동작 표현, 위험 시 정지 |
+| 능동 부저 TMB12A05 | 2 | 지게차·작업자 경보음 |
+| 9V 건전지 / USB 보조배터리 | 각 1 | 지게차 노드 / 작업자 태그 전원 |
+| 5V 3A USB-C 전원 | 1 | Raspberry Pi |
+| 3D 프린트 부품 | - | 지게차 모형(후방 레이더 창), 작업자 태그 케이스 |
+| 휴대폰 핫스팟, 노트북 | - | 현장 네트워크, SSH 접속·대시보드·ESP 업로드 |
 
 ### 6.2 소프트웨어
 
@@ -193,33 +193,50 @@ Wi-Fi 정보가 들어가는 `secrets.h`는 `.gitignore`로 제외하고, 양식
 | ESP8266 | Arduino IDE, esp8266 보드 패키지, ArduinoJson |
 | 카메라 | Python 3, OpenCV |
 | 개발 도구 | VS Code Remote-SSH, Git/GitHub |
+| MQTT 브로커 | Eclipse Mosquitto (oneM2M MQTT 바인딩) |
+| VisionAI | Ultralytics YOLO11n-pose (NCNN), OpenCV |
+| ESP8266 | Arduino IDE, esp8266 보드 패키지 3.1.2, ArduinoJson 7 |
+| 3D 모델링 | OpenSCAD |
 
 ### 6.3 배선
 
-**현재 프로토타입 (LD2450 → 라즈베리파이 UART)**
+회로도: [레이더 노드](docs/wiring/1_radar_pi_uart.png) · [지게차 경보 노드](docs/wiring/2_forklift_alarm_node.png) · [작업자 경보 태그](docs/wiring/3_worker_alarm_tag.png)
+
+**① 레이더 노드: LD2450 → Raspberry Pi 4 (UART)**
 
 | LD2450 | Raspberry Pi 4B |
 |---|---|
 | 5V | 핀 2 (5V) |
-| GND | 핀 6 |
+| GND | 핀 6 (GND) |
 | TX | 핀 10 (GPIO15, RXD) |
 | RX | 핀 8 (GPIO14, TXD) |
 
-통신 규격은 256000bps, 8N1, 3.3V 레벨이다.
+256000bps, 8N1, 3.3V 레벨. `raspi-config`에서 시리얼 로그인 셸은 끄고 시리얼 하드웨어는 켠다. 웹캠(C270)은 USB로 연결한다.
 
-**기존 목표 배선안 (현재 프로토타입 아님; 최종 채택 미확정)**
+**② 지게차 경보 노드: NodeMCU 1.0 + HW-389 확장보드**
 
-| 연결 | 핀 | 비고 |
+| 부품 | 연결 | 비고 |
 |---|---|---|
-| LD2450 5V / GND | ESP8266 #1 VIN / GND | |
-| LD2450 TX | ESP8266 #1 D7 (GPIO13) | `Serial.swap()` 후 하드웨어 RX |
-| LD2450 RX | 미연결 | GPIO15 부팅 문제 회피 |
-| ESP8266 #1 D5 | Arduino D2 | RUN 신호, 10kΩ 풀다운 → 선이 끊기면 정지 |
-| ESP8266 #1 D6 | Arduino D3 | WARN 신호 |
-| ESP8266 #1 GND | Arduino GND | 공통 접지 필수 |
-| Arduino D5 / D7 / D8 | 모터 드라이버 ENA / IN1 / IN2 | D5 PWM으로 감속 |
-| Arduino D9 | 부저 | |
-| Arduino D10 / D11 / D12 | LED R / Y / G | 220Ω 직렬 |
+| SG90 신호 (주황) | D5 (GPIO14) | `Servo.attach(14, 500, 2400)` |
+| SG90 + (빨강) | 확장보드 전원 헤더 5V | 신호 열의 V 핀(3.3V)은 쓰지 않음 |
+| SG90 − (갈색) | GND | |
+| 부저 + (긴 다리) | D6 (GPIO12) | 능동 부저 TMB12A05 |
+| 부저 − (짧은 다리) | GND | |
+| 9V 건전지 | 확장보드 DC 잭 | 단독 동작 |
+
+tinyIoT 구독 알림(HTTP `/notify`)으로 `AE-forklift01/alert`를 받는다. safe: 포크 왕복 / warn: 왕복 + 느린 경보 / danger·unknown: 포크 정지 + 경보. 내장 LED(GPIO2)는 경보 중 켜진다.
+
+**③ 작업자 경보 태그: NodeMCU v3 (LoLin)**
+
+| 부품 | 연결 |
+|---|---|
+| 부저 + (긴 다리) | D6 (GPIO12) |
+| 부저 − (짧은 다리) | GND |
+| USB 보조배터리 | micro-USB |
+
+켜지면 tinyIoT에 `AE-worker01`로 스스로 등록한다(`lbl type:worker-alarm`). warn: 느린 경보, danger: 빠른 경보, 내장 LED가 부저와 함께 깜빡인다.
+
+초기 목표 배선안(ESP8266이 레이더를 직접 읽고 아두이노가 모터 드라이버를 제어)은 채택하지 않았다. 레이더는 Pi UART로 읽고, 경보 장치는 oneM2M 구독 알림을 받아 ESP8266이 직접 서보·부저를 제어한다.
 
 ---
 
