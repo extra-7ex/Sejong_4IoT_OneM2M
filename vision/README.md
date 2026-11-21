@@ -109,3 +109,24 @@ If you modify VisionAI and let other people use it over a network, AGPL-3.0 sect
 If you need to use YOLO11 without these conditions, Ultralytics sells an [Enterprise License](https://www.ultralytics.com/license).
 
 > 요약: `vision/`은 YOLO11 때문에 AGPL-3.0, 나머지는 Apache 2.0. 서로 oneM2M으로만 통신하므로 AGPL이 다른 부분에 퍼지지 않는다. 대회 라이선스 멘토가 11/13에 문제없다고 확인했다.
+
+## 레이더 MQTT 알림 입력 시험
+
+`paho-mqtt` 2.x가 필요하다. 기존 HTTP 입력은 그대로이며 MQTT는 명시적으로 선택한다.
+시험용 설정 파일에 다음 항목을 추가하고 `--radar mqtt`로 실행한다.
+
+```yaml
+mqtt:
+  host: 127.0.0.1
+  port: 1883
+  radar_topic: /oneM2M/req/tinyiot-mn/CvisionRadarNotify/json
+  stale_s: 1.0
+```
+
+CSE의 radar CNT에 SUB를 별도로 구성하고 토픽을 실제 알림 주소에 맞춰야 한다.
+직접 `m2m:sgn` 알림에서 CIN을 읽고 중복 ri는 신선도를 갱신하지 않는다.
+빈 targets는 유효한 프레임이고 연결 단절·오래된 입력·잘못된 메시지는 radar_ok=false다.
+retained 메시지는 거부한다. 수신 시각 기반이므로 네트워크에서 지연된 메시지의
+원래 나이를 보장하지 않는다. 구독 검증 요청은 무시하며 표준 응답은 구현하지 않았다.
+실제 tinyIoT·레이더·Vision 장치 통합과 재연결 시 상태 동기화는 별도 검증이다.
+MQTT는 레이더 입력에만 적용되며 fusedTracks 출력은 기존 HTTP다.
