@@ -11,7 +11,6 @@
 #endif
 const String CSE_NAME = "TinyIoT-MN";
 const String NODE     = "worker01";                     // 작업자 노드를 더 만들면 worker02, worker03 ...
-const String WRITERS[] = {"Criskengine", "CAdmin"};     // 이 노드의 alert에 기록할 수 있는 쪽
 #define PIN_BUZZER 12                                   // D6
 const unsigned long HEARTBEAT_MS = 30000;               // 살아 있음 신호 주기
 const unsigned long WARN_MS = 500, DANGER_MS = 120;     // 부저 간격
@@ -25,7 +24,7 @@ bool registered = false, beepOn = false;
 int mode = 0, beatFail = 0;                             // mode: 0 조용, 1 warn, 2 danger
 unsigned long lastBeat = 0, lastTry = 0, lastBeep = 0;
 
-int m2m(const char* method, const String& path, int ty, const String& body) {
+int m2m(const char* method, const String& path, int ty, const String& body, String* response = nullptr) {
   WiFiClient wc;
   HTTPClient http;
   http.setTimeout(3000);
@@ -36,12 +35,24 @@ int m2m(const char* method, const String& path, int ty, const String& body) {
   http.addHeader("Accept", "application/json");
   http.addHeader("Content-Type", ty ? "application/json;ty=" + String(ty) : String("application/json"));
   int code = http.sendRequest(method, body);
+  if (response) *response = http.getString();
   Serial.printf("%-6s %-28s -> %d\n", method, path.length() ? path.c_str() : "/", code);
   http.end();
   return code;
 }
-bool ok(int c) { return c == 200 || c == 201 || c == 409; }   // 409 = 이미 있음
+bool ok(int c) { return c == 200 || c == 201; }
+bool createdOrExists(int c) { return ok(c) || c == 409; } // 리소스 생성 POST에만 사용
 String js(JsonDocument& d) { String s; serializeJson(d, s); return s; }
+
+bool retrieve(const String& path, const char* key, JsonDocument& d) {
+  String body;
+  if (m2m("GET", path, 0, "", &body) != 200 || deserializeJson(d, body) || !d[key].is<JsonObject>()) {
+    Serial.println("!! 기존 리소스 확인 실패: " + path);
+    return false;
+  }
+  Serial.println("유지: " + path + " ri=" + d[key]["ri"].as<String>());
+  return true;
+}
 
 bool sendStatus(const char* state) {
   JsonDocument c;
@@ -56,8 +67,6 @@ bool registerNode() {
   Serial.println("== 등록 시작: " + AE + " (" + myIp + ")");
   JsonDocument d;
 
-  m2m("DELETE", "/" + AE, 0, "");                       // 예전 등록을 지우고 새로 만듦 → 켤 때마다 '새 노드'로 나타남
-
   // 1) AE: 알림 받을 주소(poa)에 포트 :80을 꼭 넣음
   JsonObject ae = d["m2m:ae"].to<JsonObject>();
   ae["rn"] = AE;
@@ -67,27 +76,43 @@ bool registerNode() {
   ae["lbl"].add("type:worker-alarm");                   // MEC 경보 서비스가 이 라벨로 노드를 찾음
   ae["poa"].add("http://" + myIp + ":80/notify");
   int aeCode = m2m("POST", "", 2, js(d));
-  if (!ok(aeCode)) return false;
+  if (!createdOrExists(aeCode)) return false;
   if (aeCode == 409) {                                  // 이미 등록됨: 네트워크가 바뀌었을 수 있으니 poa를 지금 IP로 고침
     d.clear();
     d["m2m:ae"]["poa"].add("http://" + myIp + ":80/notify");
-    m2m("PUT", "/" + AE, 0, js(d));
+    if (m2m("PUT", "/" + AE, 0, js(d)) != 200) {
+      Serial.println("!! poa 갱신 실패: 등록을 재시도함");
+      return false;
+    }
+  }
+  if (!retrieve("/" + AE, "m2m:ae", d)) return false;
+  if (d["m2m:ae"]["aei"].as<String>() != ORIGIN ||
+      d["m2m:ae"]["poa"].size() != 1 ||
+      d["m2m:ae"]["poa"][0].as<String>() != "http://" + myIp + ":80/notify") {
+    Serial.println("!! AE-ID 또는 poa 불일치: 등록 실패");
+    return false;
   }
 
-  // 2) 접근 권한: 엔진도 이 노드의 alert에 쓸 수 있게
+  // 2) 신규 ACP: 엔진 CREATE만, 운영자 기존 35, 소유자/pvs 기존 63 유지.
+  // alert/status는 아직 이 ACP를 공유하므로 리소스별 최소 권한은 아님.
   d.clear();
   JsonObject acp = d["m2m:acp"].to<JsonObject>();
   acp["rn"] = "acp-" + NODE;
   JsonArray acr = acp["pv"]["acr"].to<JsonArray>();
   JsonObject own = acr.add<JsonObject>();
   own["acor"].add(ORIGIN); own["acop"] = 63;
-  JsonObject w = acr.add<JsonObject>();
-  for (const String& s : WRITERS) w["acor"].add(s);
-  w["acop"] = 35;                                       // 생성 + 조회 + 탐색
+  JsonObject engine = acr.add<JsonObject>();
+  engine["acor"].add("Criskengine"); engine["acop"] = 1;
+  JsonObject admin = acr.add<JsonObject>();
+  admin["acor"].add("CAdmin"); admin["acop"] = 35;
   JsonObject self = acp["pvs"]["acr"].to<JsonArray>().add<JsonObject>();
   self["acor"].add(ORIGIN); self["acop"] = 63;
-  bool acpOk = ok(m2m("POST", "/" + AE, 1, js(d)));
-  if (!acpOk) Serial.println("!! ACP 생성 실패: 엔진이 alert에 못 쓸 수 있음");
+  int acpCode = m2m("POST", "/" + AE, 1, js(d));
+  if (!createdOrExists(acpCode)) return false;           // ACP 없이 CNT를 만들지 않음
+  if (!retrieve("/" + AE + "/acp-" + NODE, "m2m:acp", d)) return false;
+  Serial.println(acpCode == 409 ? "기존 ACP 재사용 (정책 변경 없음):" : "신규 ACP 정책:");
+  serializeJson(d["m2m:acp"]["pv"], Serial); Serial.println();
+  serializeJson(d["m2m:acp"]["pvs"], Serial); Serial.println();
 
   // 3) 컨테이너: alert(위험 알림 받는 곳), status(살아 있음 신호)
   const char* cnts[] = {"alert", "status"};
@@ -96,8 +121,11 @@ bool registerNode() {
     JsonObject cnt = d["m2m:cnt"].to<JsonObject>();
     cnt["rn"] = cn;
     cnt["mni"] = 20;                                    // 최근 20개만 보관
-    if (acpOk) cnt["acpi"].add(CSE_NAME + "/" + AE + "/acp-" + NODE);
-    if (!ok(m2m("POST", "/" + AE, 3, js(d)))) return false;
+    cnt["acpi"].add(CSE_NAME + "/" + AE + "/acp-" + NODE);
+    if (!createdOrExists(m2m("POST", "/" + AE, 3, js(d)))) return false;
+    if (!retrieve("/" + AE + "/" + cn, "m2m:cnt", d)) return false;
+    Serial.print("현재 CNT acpi (변경 없음): ");
+    serializeJson(d["m2m:cnt"]["acpi"], Serial); Serial.println();
   }
 
   // 4) 구독: 알림 대상을 '나 자신(AE-ID)'으로 → 확인 요청 없이 만들어지고, 알림은 poa로 옴
@@ -107,9 +135,23 @@ bool registerNode() {
   sub["nu"].add(ORIGIN);
   sub["nct"] = 1;
   sub["enc"]["net"].add(3);
-  if (!ok(m2m("POST", "/" + AE + "/alert", 23, js(d)))) return false;
+  if (!createdOrExists(m2m("POST", "/" + AE + "/alert", 23, js(d)))) return false;
+  if (!retrieve("/" + AE + "/alert/sub-" + NODE, "m2m:sub", d)) return false;
+  JsonVariant existingSub = d["m2m:sub"];
+  bool notifySelf = false, notifyCreate = false;
+  for (JsonVariant nu : existingSub["nu"].as<JsonArray>()) {
+    if (nu.as<String>() == ORIGIN) notifySelf = true;
+  }
+  for (JsonVariant net : existingSub["enc"]["net"].as<JsonArray>()) {
+    if (net.as<int>() == 3) notifyCreate = true;
+  }
+  if (!notifySelf || !notifyCreate || existingSub["nct"].as<int>() != 1) {
+    Serial.println("!! 기존 SUB 설정 불일치: 삭제/변경 없이 등록 중단");
+    return false;
+  }
 
-  sendStatus("online");
+  if (!sendStatus("online")) return false;
+  Serial.println("경보 그룹 가입은 별도 운영 작업 (자동 추가하지 않음)");
   Serial.println("== 등록 완료");
   return true;
 }
