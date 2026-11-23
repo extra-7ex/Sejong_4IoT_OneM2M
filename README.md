@@ -86,11 +86,66 @@ Run a second tinyIoT built with [`onem2m/config.in.example.h`](onem2m/config.in.
 
 **3. Start SafeZone on the Pi**
 
+The service templates select the demonstrated path: MQTT radar upload with
+local radar decisions disabled, HTTP polling by RiskEngine, and HTTP writes to
+the event CNT and alarm group. They use the demo thresholds (1.5 m DANGER,
+2.5 m WARNING) and 5-second input-silence and sample-interval settings.
+The sensor timestamp has a separate 3-second freshness limit. These values
+are demo settings, not validated industrial safety limits.
+
+**Prepare the devices and oneM2M resources.** Flash the ESP firmware as in
+step 4, power the worker ESP, and allow it to register on the MN first.
+The following command prepares the demo AE, CNT, ACP and group on MN and IN.
+Replace the IN address and, if needed, its actual CSE-ID. It preserves existing
+resources; if a named ACP or group differs, it stops for inspection. On an
+already configured deployment, inspect and back up resources before running it.
+The worker's existing shared alert/status ACP is preserved. If setup stops,
+resources created before the error remain; correct the cause and rerun it.
+
+```bash
+cd ~/Sejong_4IoT_OneM2M
+python3 -m onem2m.bootstrap_demo \
+  --in-base http://<IN_IP>:3000/TinyIoT --in-cse-id id-in
+# Set up the forklift HTTP subscription using its current Wi-Fi address:
+bash onem2m/sub_alert_node.sh <FORKLIFT_ESP_IP>
+```
+
+The subscription command above deletes and recreates an existing subscription;
+use it for a fresh setup only. For an existing deployment, preserve the SUB
+and update its notification URI after backing it up. Do not use the older
+`onem2m/alarm_group.py` on an existing deployment: it deletes and recreates
+the group and changes member ACPs.
+
+**Prepare MEC discovery.** The demo registry runs on the Pi. The command
+below registers the Vision CIN endpoint in the provided AdvantEDGE experiment;
+it emulates app provisioning and briefly restarts the MEP during initial
+registration. It does not deploy the Vision application.
+
+```bash
+cd ~/Sejong_4IoT_OneM2M/experiments/mec011-host-a
+git clone https://github.com/InterDigitalInc/AdvantEDGE.git upstream
+git -C upstream checkout 8f6edbeaf3674b6a667ce3bc1dbef3a7fccbe2b9
+docker compose -p safezone-mec-experiment up -d --build
+python3 register_vision_cin.py
+cd ~/Sejong_4IoT_OneM2M
+```
+
+The clean ARM64 image build and complete installation have not yet been
+validated on a fresh Pi. Existing Redis installations need migration before
+switching to the named volume; see [the MEC experiment notes](experiments/mec011-host-a/README.md).
+
+**Configure the laptop IN address and start the services.** Add the following
+line to `/etc/default/safezone` on the Pi; the bridge will not start without
+it. Existing environment-file values and systemd drop-ins override unit defaults:
+
+```bash
+BRIDGE_IN_BASE=http://<IN_IP>:3000/TinyIoT
+```
+
 ```bash
 cd ~/Sejong_4IoT_OneM2M
 sudo bash systemd/install.sh $USER <VISION_DIR>
 sudo systemctl enable safezone-radar safezone-engine safezone-bridge safezone-ipe safezone-vision safezone.target
-python3 onem2m/alarm_group.py            # labels, discovery, ACPs and the alarm group
 sudo systemctl start safezone.target
 python3 tools/preflight.py               # checks services, data, alert writer and subscriptions
 ```
@@ -266,7 +321,7 @@ worker AE 재등록 후 새 alert CNT RI를 경보 그룹 `mid`에 연결했다.
 
 주요 리소스 유형: CSEBase(ty 5)는 서버 최상위, ACP(1)는 접근 정책, AE(2)는 애플리케이션, CNT(3)는 데이터 컨테이너, CIN(4)은 개별 데이터, GRP(9)는 그룹, SUB(23)는 변경 알림 설정이다.
 
-리소스에는 `lbl`(라벨)을 붙여 이름을 몰라도 검색으로 찾게 했다(`?fu=1&lbl=safezone:alarm`). 경보 장치는 이 검색으로 그룹 `grp-safezone-alarms`에 묶이고, 경보 작성자는 그룹의 fanOutPoint(`/fopt`)에 한 번 쓴다. 만드는 법은 `python3 onem2m/alarm_group.py`, 설명은 [시연방법.md G절](시연방법.md).
+리소스에는 `lbl`(라벨)을 붙여 이름을 몰라도 검색으로 찾게 했다(`?fu=1&lbl=safezone:alarm`). 경보 장치는 그룹 `grp-safezone-alarms`에 묶이고, 경보 작성자는 그룹의 fanOutPoint(`/fopt`)에 한 번 쓴다. 기존 `alarm_group.py`는 그룹을 삭제 후 재생성하고 ACP를 변경하므로 운영 그룹에는 사용하지 않는다.
 
 ### 4.2 구독 흐름
 

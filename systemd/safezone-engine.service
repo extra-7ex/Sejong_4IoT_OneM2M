@@ -7,16 +7,18 @@ PartOf=safezone.target
 Type=simple
 User=<PI_USER>
 WorkingDirectory=/home/<PI_USER>/Sejong_4IoT_OneM2M
-# ACP 문제(#6) 때문에 지금은 CAdmin. --vision-path가 있으면 카메라·레이더 결합 규칙을 쓴다
-Environment=ONEM2M_ORIGIN=CAdmin
+# The demo uses the dedicated engine origin; resource ACPs must allow it.
+Environment=ONEM2M_ORIGIN=Criskengine
 # Pi의 tinyIoT가 가끔 1–2초 멈춘다(11/19 실측). 그 사이에 요청이 끊기거나 UNKNOWN(지게차 정지)이 나지 않게
 Environment=ONEM2M_HTTP_TIMEOUT_S=3
-Environment=RISK_STALE_AFTER_S=3
+Environment=RISK_STALE_AFTER_S=5
+Environment=RISK_WARNING_DISTANCE_M=2.5
+Environment=RISK_DANGER_DISTANCE_M=1.5
 # 레이더는 0.5초마다 오지만 tinyIoT 지연으로 간격이 0.75초를 넘으면 같은 사람인지 확신하지 못해 UNKNOWN이 났다
-Environment=RISK_MAX_SAMPLE_INTERVAL_S=1.5
-Environment="ENGINE_ARGS=--transport polling --vision-path /AE-VisionAI/fusedTracks/la"
+Environment=RISK_MAX_SAMPLE_INTERVAL_S=5
+Environment="ENGINE_ARGS=--transport polling --vision-path /AE-VisionAI/fusedTracks/la --alert-path /grp-safezone-alarms/fopt"
 # 값을 바꾸려면 /etc/default/safezone에 같은 이름으로 적는다 (예: ENGINE_ARGS=--transport polling)
-# 엔진이 지게차 alert를 쓰게 하려면 시연방법.md E절 (ENGINE_ARGS에 --alert-path, 레이더는 RADAR_LOCAL_DECISION=0)
+# The radar service disables its own decision so the engine is the alert writer.
 EnvironmentFile=-/etc/default/safezone
 ExecStart=/usr/bin/python3 -m engine.main $ENGINE_ARGS
 Restart=always

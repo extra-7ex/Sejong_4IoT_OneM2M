@@ -20,6 +20,11 @@ cat <<MSG
 다음 단계 (시연방법.md의 'D. 서비스로 켜기'):
   레이더 하나 고르기:  sudo systemctl enable safezone-radar      (실제 LD2450)
                        sudo systemctl enable safezone-sim-radar  (가상 레이더)
-  나머지 등록:         sudo systemctl enable safezone-engine safezone-bridge safezone-dashboard safezone-ipe safezone-vision safezone.target
+  나머지 등록:         sudo systemctl enable safezone-engine safezone-bridge safezone-ipe safezone-vision safezone.target
   전체 켜기/끄기:      sudo systemctl start safezone.target / sudo systemctl stop safezone.target
+
+이 설치는 AE, CNT, ACP, 경보 그룹이나 MEC 서비스 등록을 만들지 않습니다.
+기존 /etc/default/safezone과 systemd drop-in은 기본값을 덮어쓸 수 있습니다.
+브리지에는 /etc/default/safezone에 노트북 IN 주소 BRIDGE_IN_BASE가 필요합니다.
+대시보드 시연은 노트북 IN 경유 구성을 사용합니다.
 MSG

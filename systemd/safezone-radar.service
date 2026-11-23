@@ -11,6 +11,7 @@ Type=simple
 User=<PI_USER>
 WorkingDirectory=/home/<PI_USER>/Sejong_4IoT_OneM2M
 Environment=PYTHONUNBUFFERED=1
+Environment=RADAR_LOCAL_DECISION=0
 EnvironmentFile=-/etc/default/safezone
 ExecStart=/usr/bin/python3 radar/radar_node.py
 Restart=always
