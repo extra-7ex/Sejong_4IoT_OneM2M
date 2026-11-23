@@ -1,6 +1,6 @@
 [Unit]
 Description=SafeZone MN -> IN risk event bridge
-After=network-online.target tinyiot-mn.service tinyiot-in-local.service
+After=network-online.target tinyiot-mn.service
 PartOf=safezone.target
 
 [Service]
@@ -8,6 +8,11 @@ Type=simple
 # <PI_USER>, 저장소 경로는 실제 환경에 맞게 수정
 User=<PI_USER>
 WorkingDirectory=/home/<PI_USER>/Sejong_4IoT_OneM2M
+Environment=BRIDGE_MN_ORIGIN=Cbridge
+# Supply BRIDGE_IN_BASE for the laptop IN-CSE in /etc/default/safezone.
+Environment=BRIDGE_IN_BASE=
+EnvironmentFile=-/etc/default/safezone
+ExecStartPre=/usr/bin/test -n ${BRIDGE_IN_BASE}
 ExecStart=/usr/bin/python3 -m onem2m.mn_to_in_bridge
 Restart=always
 RestartSec=3

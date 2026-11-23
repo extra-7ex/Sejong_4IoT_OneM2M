@@ -7,6 +7,10 @@ PartOf=safezone.target
 Type=simple
 User=<PI_USER>
 WorkingDirectory=/home/<PI_USER>/Sejong_4IoT_OneM2M
+Environment=IPE_PROBE=mec-cin
+Environment=IPE_MEC_BASE=http://127.0.0.1:18080/safezone-a/mep-a/mec_service_mgmt/v1
+Environment=IPE_MEC_SERVICE=safezone-vision-cin-trial
+Environment=IPE_READ_ORIGIN=CmecIPE
 EnvironmentFile=-/etc/default/safezone
 ExecStart=/usr/bin/python3 -m onem2m.mec_ipe
 Restart=always

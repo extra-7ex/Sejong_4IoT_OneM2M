@@ -1,11 +1,15 @@
 services:
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - mec-redis-data:/data
     networks:
       trial:
         aliases:
           - meep-redis-master.default.svc.cluster.local
   mep:
+    restart: unless-stopped
     build:
       context: ./upstream
       dockerfile: ../Dockerfile
@@ -19,6 +23,7 @@ services:
       - trial
   proxy:
     image: nginx:1.27-alpine
+    restart: unless-stopped
     ports:
       - "127.0.0.1:18080:80"
     volumes:
@@ -37,3 +42,5 @@ services:
       - trial
 networks:
   trial:
+volumes:
+  mec-redis-data:

@@ -6,7 +6,7 @@
 #define SERVER_IP     "<RPI_IP>"
 #define SERVER_PORT   "3000"
 #define CSE_BASE_NAME "<CSE_BASE_NAME>"      // 11/10 시험 당시 "TinyIoT-mn", 팀 기본값 "TinyIoT-MN" (docs/cse-naming.md)
-#define CSE_BASE_RI   "id-mn"                // MQTT 토픽에 쓰이는 값
+#define CSE_BASE_RI   "tinyiot-mn"           // radar_node.py 기본 MQTT 토픽과 일치
 
 #if SERVER_TYPE == MN_CSE
 #define REMOTE_CSE_ID    "id-in"             // 상위 IN의 CSE_BASE_RI
@@ -17,7 +17,7 @@
 // Pi 내부 IN 대안: REMOTE_CSE_HOST "127.0.0.1", REMOTE_CSE_PORT 3001
 #endif
 
-#define ALLOWED_REMOTE_CSE_ID "/id-in,/id-mn"
+#define ALLOWED_REMOTE_CSE_ID "/id-in,/tinyiot-mn"
 
 // Pi DB가 느려 IN 등록 응답이 3초를 넘긴 적이 있음 (기본 3 -> 10 권장, 아직 Pi에 미적용)
 #define SOCKET_TIMEOUT 10
