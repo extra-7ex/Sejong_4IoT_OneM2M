@@ -77,7 +77,7 @@ sudo systemctl enable --now tinyiot-in-local
 | Pi 주소 변경 | MN 설정의 `SERVER_IP`, worker `secrets.h`의 `CSE_HOST`, 노트북 dashboard의 `DASH_CSE_BASE`를 새 Pi 주소로 바꾼다. MN은 재빌드·재시작, worker 펌웨어는 재빌드·업로드, dashboard는 재시작 |
 | 노트북 IN 주소 변경 | MN 설정의 `REMOTE_CSE_HOST/PORT`를 갱신해 MN 재빌드·재시작. 브리지의 `BRIDGE_IN_BASE`와 노트북 대시보드의 `DASH_IN_BASE`도 새 IN 주소로 바꾸고 각각 재시작 |
 | 지게차 ESP 주소 변경 | ESP 시리얼 로그의 IP를 확인해 `bash onem2m/sub_alert_node.sh <ESP_IP>`를 다시 실행 |
-| worker AE 재등록 | 새 worker alert CNT RI를 확인하고 `grp-safezone-alarms`의 `mid` 참조를 갱신한 뒤 fan-out과 알림을 확인 |
+| worker AE 재등록 | 최신 펌웨어는 기존 AE·CNT·SUB를 재사용하고 `poa`를 검증한다. 전후 alert RI와 그룹 참조를 확인한다. 이전 삭제형 펌웨어가 RI를 바꿨거나 신규 작업자라면 현재 RI를 별도로 그룹에 연결한 뒤 알림을 확인 |
 | 공통 | 클라이언트의 CSE 주소와 DHCP 주소 예약 여부를 실제 네트워크에서 확인. 비밀번호와 실주소는 저장소에 기록하지 않음 |
 
 - 도서관 등 공용 Wi-Fi는 기기 간 통신을 막는 경우(AP 격리)가 많다. 휴대폰 핫스팟 등 개인 망을 쓴다.
@@ -89,7 +89,7 @@ sudo systemctl enable --now tinyiot-in-local
 
 1. `esp8266/led_server/secrets.example.h`를 같은 폴더의 `secrets.h`로 복사한다. `secrets.h`는 `.gitignore` 대상이므로 개인 Wi-Fi 정보와 장비 주소는 그 파일에만 쓴다.
 2. Wi-Fi 이름·비밀번호와 `CSE_HOST=http://<PI_IP>:3000`을 설정한다. Pi 주소가 바뀌면 `CSE_HOST`를 바꾸고 worker 펌웨어를 다시 빌드·업로드한다.
-3. 부팅 시 worker AE가 현재 ESP IP를 `poa`로 등록한다. 재등록으로 AE/alert CNT가 새로 만들어졌다면 새 alert RI를 확인해 그룹 `mid`를 갱신한다.
+3. 부팅 시 worker AE가 현재 ESP IP를 `poa`로 등록한다. 최신 펌웨어는 기존 AE·CNT·SUB를 삭제하지 않고, `poa` PUT 또는 조회 검증에 실패하면 재시도한다. 기존 ACP도 갱신하지 않고 조회·보고한다. 신규 등록과 그룹 가입은 별도이며, 과거 삭제형 펌웨어로 RI가 바뀌었다면 현재 alert RI를 그룹에 연결해야 한다. [작업자 등록·권한·복구 절차](worker-registration.md)를 참고한다.
 
 ### Forklift motor ESP
 
